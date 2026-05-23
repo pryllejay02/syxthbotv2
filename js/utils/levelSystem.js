@@ -3,22 +3,18 @@ const MAX_LEVEL = 99;
 function getRequiredExp(level) {
   if (level >= MAX_LEVEL) return Infinity;
 
-  // Easier leveling from Lv.1 to Lv.20
   if (level <= 20) {
     return Math.floor(50 + level * 35 + level * level * 8);
   }
 
-  // Medium grind from Lv.21 to Lv.50
   if (level <= 50) {
     return Math.floor(300 + level * 80 + level * level * 18);
   }
 
-  // Harder grind from Lv.51 to Lv.80
   if (level <= 80) {
     return Math.floor(1000 + level * 120 + level * level * 25);
   }
 
-  // End-game grind from Lv.81 to Lv.99
   return Math.floor(2500 + level * 180 + level * level * 35);
 }
 
@@ -28,6 +24,8 @@ function getStatsGain(level) {
       maxHp: 12,
       attack: 3,
       defense: 2,
+      dodge: 0.2,
+      crit: 0.2,
     };
   }
 
@@ -36,6 +34,8 @@ function getStatsGain(level) {
       maxHp: 18,
       attack: 4,
       defense: 3,
+      dodge: 0.15,
+      crit: 0.15,
     };
   }
 
@@ -44,6 +44,8 @@ function getStatsGain(level) {
       maxHp: 25,
       attack: 6,
       defense: 4,
+      dodge: 0.1,
+      crit: 0.1,
     };
   }
 
@@ -51,16 +53,28 @@ function getStatsGain(level) {
     maxHp: 35,
     attack: 8,
     defense: 6,
+    dodge: 0.05,
+    crit: 0.05,
   };
 }
 
 function applyLevelUp(player, gainedExp) {
-  let level = player.level || 1;
-  let exp = (player.exp || 0) + gainedExp;
+  let level = Number(player.level || 1);
+  let exp = Number(player.exp || 0) + Number(gainedExp || 0);
 
-  let maxHp = player.maxHp || 100;
-  let attack = player.attack || 10;
-  let defense = player.defense || 5;
+  const baseStats = player.baseStats || {
+    attack: 10,
+    defense: 5,
+    maxHp: 100,
+    dodge: 0,
+    crit: 0,
+  };
+
+  let baseAttack = Number(baseStats.attack || 10);
+  let baseDefense = Number(baseStats.defense || 5);
+  let baseMaxHp = Number(baseStats.maxHp || 100);
+  let baseDodge = Number(baseStats.dodge || 0);
+  let baseCrit = Number(baseStats.crit || 0);
 
   let leveledUp = false;
   let levelUps = 0;
@@ -73,9 +87,11 @@ function applyLevelUp(player, gainedExp) {
 
     const gain = getStatsGain(level);
 
-    maxHp += gain.maxHp;
-    attack += gain.attack;
-    defense += gain.defense;
+    baseAttack += gain.attack;
+    baseDefense += gain.defense;
+    baseMaxHp += gain.maxHp;
+    baseDodge += gain.dodge;
+    baseCrit += gain.crit;
   }
 
   if (level >= MAX_LEVEL) {
@@ -86,10 +102,13 @@ function applyLevelUp(player, gainedExp) {
   return {
     level,
     exp,
-    maxHp,
-    hp: maxHp,
-    attack,
-    defense,
+    baseStats: {
+      attack: baseAttack,
+      defense: baseDefense,
+      maxHp: baseMaxHp,
+      dodge: Number(baseDodge.toFixed(2)),
+      crit: Number(baseCrit.toFixed(2)),
+    },
     leveledUp,
     levelUps,
     nextLevelExp: getRequiredExp(level),

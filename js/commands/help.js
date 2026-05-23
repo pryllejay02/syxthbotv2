@@ -9,6 +9,10 @@ module.exports = async function helpCommand(message, prefix) {
 \`${prefix} start\`
 Create your MMORPG character
 
+🌍 Select World
+⚔️ Select Class
+(⚔️ Swordsman / 🏹 Archer / 🗡️ Assassin / 🛡️ Tanker)
+
 \`${prefix} profile\`
 View your profile and stats
 
@@ -27,6 +31,12 @@ Find and challenge a monster
 
 \`${prefix} hit\`
 Attack the monster
+
+💥 Critical Hit
+Chance to deal x2 damage
+
+💨 Dodge
+Chance to avoid enemy attacks
 
 \`${prefix} retreat\`
 Escape from battle
@@ -64,7 +74,7 @@ Example:
 \`${prefix} shop 20\`
 
 \`${prefix} buy <item_id> <quantity>\`
-Buy an item
+Buy item(s)
 
 Example:
 \`${prefix} buy hp_potion 5\`
@@ -80,9 +90,10 @@ Example:
 \`${prefix} equip common_knight_sword\`
 
 \`${prefix} unequip <slot>\`
-Unequip equipped gear
+Unequip gear
 
 Slots:
+
 \`weapon\`
 \`helmet\`
 \`armor\`
@@ -94,14 +105,32 @@ Example:
 \`${prefix} unequip weapon\`
 
 ━━━━━━━━━━━━━━━━━━
+📖 CLASS INFO
+━━━━━━━━━━━━━━━━━━
+
+⚔️ Swordsman
+Balanced HP, Attack and Defense
+
+🏹 Archer
+High Crit and medium Dodge
+
+🗡️ Assassin
+Very high Crit and Dodge
+
+🛡️ Tanker
+Very high HP and Defense
+
+━━━━━━━━━━━━━━━━━━
 📖 SYSTEM
 ━━━━━━━━━━━━━━━━━━
 
 \`${prefix} help\`
 Show all commands
 
-🌍 Explore worlds, defeat monsters,
-collect equipment, and become stronger
-in the world of Syxth MMORPG.
+🌍 Explore worlds
+⚔️ Defeat monsters
+🎒 Collect equipment
+👑 Become the strongest adventurer
+in Syxth MMORPG
 `);
 };

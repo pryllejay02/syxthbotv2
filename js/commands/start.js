@@ -10,7 +10,6 @@ const worlds = require("../data/worlds");
 const SERVER_SELECTION_CHANNEL_ID = "1507254912009113731";
 
 module.exports = async function startCommand(message) {
-  // ONLY ALLOW IN SERVER-SELECTION CHANNEL
   if (message.channel.id !== SERVER_SELECTION_CHANNEL_ID) {
     return message.reply(
       "❌ You can only create your character in the server-selection channel."
@@ -23,12 +22,9 @@ module.exports = async function startCommand(message) {
   const playerDoc = await playerRef.get();
 
   if (playerDoc.exists) {
-    return message.reply(
-      "⚔️ You already have a Syxth character!"
-    );
+    return message.reply("⚔️ You already have a Syxth character!");
   }
 
-  // CREATE WORLD SELECTION MENU
   const menu = new StringSelectMenuBuilder()
     .setCustomId(`select_world_${userId}`)
     .setPlaceholder("🌍 Select your world")
@@ -44,8 +40,9 @@ module.exports = async function startCommand(message) {
 
   return message.reply({
     content:
-      "🌍 **Choose your world to create your character.**\n\n" +
-      "Your selected world will determine which channels you can access.",
+      "🌍 **Choose your world first.**\n\n" +
+      "After choosing your world, you will select your class:\n" +
+      "⚔️ Swordsman • 🏹 Archer • 🗡️ Assassin • 🛡️ Tanker",
     components: [row],
   });
 };

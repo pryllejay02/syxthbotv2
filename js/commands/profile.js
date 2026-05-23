@@ -35,6 +35,8 @@ module.exports = async function profileCommand(message) {
   const gold = Number(player.gold ?? 0);
   const attack = Number(player.attack ?? 10);
   const defense = Number(player.defense ?? 5);
+  const dodge = Number(player.dodge ?? 0); // New stat
+  const crit = Number(player.crit ?? 0);   // New stat
 
   const playerClass = player.class || "Novice";
 
@@ -70,11 +72,7 @@ module.exports = async function profileCommand(message) {
 
   if (hp <= 0 && player.reviveAvailableAt) {
     const now = Date.now();
-
-    const reviveAvailableAt = Number(
-      player.reviveAvailableAt
-    );
-
+    const reviveAvailableAt = Number(player.reviveAvailableAt);
     const remainingSeconds = Math.max(
       0,
       Math.ceil((reviveAvailableAt - now) / 1000)
@@ -105,6 +103,8 @@ module.exports = async function profileCommand(message) {
         value:
           `**Attack:** ${attack}\n` +
           `**Defense:** ${defense}\n` +
+          `**Dodge:** ${dodge.toFixed(1)}%\n` +
+          `**Crit:** ${crit.toFixed(1)}%\n` +
           `**Weapon:** ${weapon}`,
         inline: true,
       },

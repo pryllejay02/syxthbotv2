@@ -45,7 +45,8 @@ module.exports = async function useCommand(message, args) {
       return message.reply("❤️ Your HP is already full.");
     }
 
-    const healAmount = Math.floor(maxHp * 0.5);
+    const healPercent = Number(item.healPercent || 50);
+    const healAmount = Math.floor(maxHp * (healPercent / 100));
     const newHp = Math.min(maxHp, hp + healAmount);
 
     inventory[itemIndex].quantity -= 1;

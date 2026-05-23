@@ -43,9 +43,16 @@ module.exports = async function profileCommand(message) {
   const equipment = player.equipment || {};
   const equippedWeapon = equipment.weapon;
 
-  const weapon = equippedWeapon
-    ? `${equippedWeapon.emoji || "🗡️"} ${equippedWeapon.name}`
-    : "Wooden Sword";
+  const defaultWeaponByClass = {
+  swordsman: "🗡️ Wooden Sword",
+  archer: "🏹 Wooden Bow",
+  assassin: "🗡️ Training Dagger",
+  tanker: "🛡️ Wooden Shield",
+};
+
+const weapon = equippedWeapon
+  ? `${equippedWeapon.emoji || "🗡️"} ${equippedWeapon.name}`
+  : defaultWeaponByClass[player.classId] || player.weapon || "🗡️ Wooden Sword";
 
   const worldName = player.world?.name || "No World Selected";
 

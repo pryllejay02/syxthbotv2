@@ -1,7 +1,7 @@
 const { db } = require("../../firebase/firebase");
 
 const REST_COST = 100;
-const REVIVE_WAIT_TIME = 60 * 1000;
+
 
 module.exports = async function restCommand(message) {
   const userId = message.author.id;

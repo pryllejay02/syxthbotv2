@@ -11,13 +11,19 @@ Create your MMORPG character
 
 🌍 Select World
 ⚔️ Select Class
-(⚔️ Swordsman / 🏹 Archer / 🗡️ Assassin / 🛡️ Tanker)
+
+Classes:
+
+⚔️ Swordsman
+🏹 Archer
+🗡️ Assassin
+🛡️ Tanker
 
 \`${prefix} profile\`
-View your profile and stats
+View profile and combat stats
 
 \`${prefix} character\`
-View equipped items and gear
+View character equipment
 
 \`${prefix} char\`
 Short command for character
@@ -27,7 +33,7 @@ Short command for character
 ━━━━━━━━━━━━━━━━━━
 
 \`${prefix} hunt\`
-Find and challenge a monster
+Find and challenge monsters
 
 \`${prefix} hit\`
 Attack the monster
@@ -39,25 +45,26 @@ Chance to deal x2 damage
 Chance to avoid enemy attacks
 
 \`${prefix} retreat\`
-Escape from battle
+Escape battle
 
 \`${prefix} rest\`
-Recover HP or instantly revive
+Recover HP or revive instantly
 
 ━━━━━━━━━━━━━━━━━━
 🎒 INVENTORY & ITEMS
 ━━━━━━━━━━━━━━━━━━
 
 \`${prefix} inventory\`
-View your inventory
+View inventory
 
 \`${prefix} inv\`
 Short inventory command
 
 \`${prefix} use <item_id>\`
-Use a consumable item
+Use consumable items
 
 Example:
+
 \`${prefix} use hp_potion\`
 
 ━━━━━━━━━━━━━━━━━━
@@ -65,18 +72,20 @@ Example:
 ━━━━━━━━━━━━━━━━━━
 
 \`${prefix} shop\`
-View item shop
+Open class shop
 
 \`${prefix} shop <level>\`
-View shop items by level
+View items by level
 
 Example:
+
 \`${prefix} shop 20\`
 
 \`${prefix} buy <item_id> <quantity>\`
 Buy item(s)
 
 Example:
+
 \`${prefix} buy hp_potion 5\`
 
 ━━━━━━━━━━━━━━━━━━
@@ -87,10 +96,11 @@ Example:
 Equip an item
 
 Example:
-\`${prefix} equip common_knight_sword\`
+
+\`${prefix} equip swordsman_weapon_1\`
 
 \`${prefix} unequip <slot>\`
-Unequip gear
+Remove equipped item
 
 Slots:
 
@@ -102,7 +112,27 @@ Slots:
 \`boots\`
 
 Example:
+
 \`${prefix} unequip weapon\`
+
+━━━━━━━━━━━━━━━━━━
+📊 STATS INFO
+━━━━━━━━━━━━━━━━━━
+
+⚔️ Attack
+Increase damage dealt
+
+🛡️ Defense
+Reduce incoming damage
+
+❤️ Max HP
+Increase survivability
+
+💨 Dodge
+Chance to avoid enemy attacks
+
+💥 Crit
+Chance to deal x2 damage
 
 ━━━━━━━━━━━━━━━━━━
 📖 CLASS INFO
@@ -130,6 +160,7 @@ Show all commands
 🌍 Explore worlds
 ⚔️ Defeat monsters
 🎒 Collect equipment
+🔥 Level up
 👑 Become the strongest adventurer
 in Syxth MMORPG
 `);

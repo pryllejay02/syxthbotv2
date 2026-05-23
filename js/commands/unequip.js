@@ -1,24 +1,5 @@
 const { db } = require("../../firebase/firebase");
-
-function calculateTotalStats(baseStats, equipment) {
-  let totalAttack = Number(baseStats.attack || 10);
-  let totalDefense = Number(baseStats.defense || 5);
-  let totalMaxHp = Number(baseStats.maxHp || 100);
-
-  Object.values(equipment).forEach((item) => {
-    if (!item || !item.stats) return;
-
-    totalAttack += Number(item.stats.attack || 0);
-    totalDefense += Number(item.stats.defense || 0);
-    totalMaxHp += Number(item.stats.maxHp || 0);
-  });
-
-  return {
-    attack: totalAttack,
-    defense: totalDefense,
-    maxHp: totalMaxHp,
-  };
-}
+const { calculateTotalStats } = require("../utils/statSystem");
 
 module.exports = async function unequipCommand(message, args = []) {
   const userId = message.author.id;
@@ -65,15 +46,17 @@ module.exports = async function unequipCommand(message, args = []) {
   const item = equipment[slot];
 
   if (!item) {
+    return message.reply(`❌ You have no item equipped in **${slot}**.`);
+  }
+
+  if (item.quality === "Starter") {
     return message.reply(
-      `❌ You have no item equipped in **${slot}**.`
+      "❌ You cannot unequip your starter weapon unless you equip another weapon first."
     );
   }
 
-  // REMOVE EQUIPPED ITEM
   equipment[slot] = null;
 
-  // RETURN ITEM TO INVENTORY
   const inventory = player.inventory || [];
 
   const existingItemIndex = inventory.findIndex(
@@ -94,6 +77,8 @@ module.exports = async function unequipCommand(message, args = []) {
     attack: Number(player.attack || 10),
     defense: Number(player.defense || 5),
     maxHp: Number(player.maxHp || 100),
+    dodge: Number(player.dodge || 0),
+    crit: Number(player.crit || 0),
   };
 
   const totalStats = calculateTotalStats(baseStats, equipment);
@@ -102,12 +87,16 @@ module.exports = async function unequipCommand(message, args = []) {
   const newHp = Math.min(currentHp, totalStats.maxHp);
 
   await playerRef.update({
-    baseStats: baseStats,
-    equipment: equipment,
-    inventory: inventory,
+    baseStats,
+    equipment,
+    inventory,
+
     attack: totalStats.attack,
     defense: totalStats.defense,
     maxHp: totalStats.maxHp,
+    dodge: totalStats.dodge,
+    crit: totalStats.crit,
+
     hp: newHp,
   });
 
@@ -115,6 +104,8 @@ module.exports = async function unequipCommand(message, args = []) {
     `${item.emoji || "📦"} Unequipped **${item.name}** from **${slot}**.\n\n` +
       `⚔️ Attack: ${totalStats.attack}\n` +
       `🛡️ Defense: ${totalStats.defense}\n` +
-      `❤️ Max HP: ${totalStats.maxHp}`
+      `❤️ Max HP: ${totalStats.maxHp}\n` +
+      `💨 Dodge: ${Number(totalStats.dodge || 0).toFixed(1)}%\n` +
+      `💥 Crit: ${Number(totalStats.crit || 0).toFixed(1)}%`
   );
 };

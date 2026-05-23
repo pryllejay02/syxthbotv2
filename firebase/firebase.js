@@ -1,9 +1,18 @@
 const admin = require("firebase-admin");
-const serviceAccount = require("./syxthbot-firebase-adminsdk-fbsvc-b5e1bcea28.json");
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
+const privateKey = process.env.FIREBASE_PRIVATE_KEY
+  ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n")
+  : undefined;
+
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey,
+    }),
+  });
+}
 
 const db = admin.firestore();
 

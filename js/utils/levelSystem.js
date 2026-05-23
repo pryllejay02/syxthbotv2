@@ -63,12 +63,12 @@ function applyLevelUp(player, gainedExp) {
   let exp = Number(player.exp || 0) + Number(gainedExp || 0);
 
   const baseStats = player.baseStats || {
-    attack: 10,
-    defense: 5,
-    maxHp: 100,
-    dodge: 0,
-    crit: 0,
-  };
+  attack: Number(player.attack || 10),
+  defense: Number(player.defense || 5),
+  maxHp: Number(player.maxHp || 100),
+  dodge: Number(player.dodge || 0),
+  crit: Number(player.crit || 0),
+};
 
   let baseAttack = Number(baseStats.attack || 10);
   let baseDefense = Number(baseStats.defense || 5);

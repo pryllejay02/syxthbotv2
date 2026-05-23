@@ -214,7 +214,7 @@ module.exports = async function hitCommand(message) {
         : `${monsterCritical ? `🔥 **MONSTER CRITICAL HIT!**\n` : ""}` +
           `🔥 ${battle.monsterName} hit you for **${monsterDamage}** damage!\n`
       }` +
-      `❤️ Your HP: ${playerHp}/${player.maxHp}\n\n` +
+      `❤️ Your HP: ${playerHp}/${Number(player.maxHp || 100)}\n\n` +
       `Use \`!s hit\` to attack again or \`!s retreat\` to escape.`
   );
 };

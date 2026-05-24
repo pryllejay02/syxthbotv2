@@ -13,7 +13,6 @@ Create your MMORPG character
 ⚔️ Select Class
 
 Classes:
-
 ⚔️ Swordsman
 🏹 Archer
 🗡️ Assassin
@@ -44,6 +43,21 @@ Chance to deal x2 damage
 💨 Dodge
 Chance to avoid enemy attacks
 
+🎁 Loot Drops
+Lv.5+ monsters can drop equipment
+
+Drop Rates:
+🟢 Common: 50%
+🔵 Rare: 30%
+❌ No Drop: 20%
+
+Loot Rules:
+• Monster Lv.5 drops Lv.5 items
+• Monster Lv.10 drops Lv.10 items
+• Monster Lv.15 drops Lv.15 items
+• Rare items have higher randomized stats
+• Loot class is randomized
+
 \`${prefix} retreat\`
 Escape battle
 
@@ -64,8 +78,18 @@ Short inventory command
 Use consumable items
 
 Example:
-
 \`${prefix} use hp_potion\`
+
+\`${prefix} sell <item_id> <quantity>\`
+Sell item(s) for gold
+
+Example:
+\`${prefix} sell archer_iron_weapon 1\`
+
+Note:
+• Starter equipment cannot be sold
+• Rare drops sell for more gold
+• Use \`${prefix} inv\` to copy the item ID
 
 ━━━━━━━━━━━━━━━━━━
 🏪 SHOP COMMANDS
@@ -78,15 +102,18 @@ Open class shop
 View items by level
 
 Example:
-
 \`${prefix} shop 20\`
 
 \`${prefix} buy <item_id> <quantity>\`
 Buy item(s)
 
 Example:
-
 \`${prefix} buy hp_potion 5\`
+\`${prefix} buy archer_iron_weapon 1\`
+
+Shop Notes:
+• Shop sells Common equipment only
+• Rare equipment is obtained from monster drops
 
 ━━━━━━━━━━━━━━━━━━
 🛡️ EQUIPMENT COMMANDS
@@ -96,14 +123,12 @@ Example:
 Equip an item
 
 Example:
-
-\`${prefix} equip swordsman_weapon_1\`
+\`${prefix} equip archer_iron_weapon\`
 
 \`${prefix} unequip <slot>\`
 Remove equipped item
 
 Slots:
-
 \`weapon\`
 \`helmet\`
 \`armor\`
@@ -112,7 +137,6 @@ Slots:
 \`boots\`
 
 Example:
-
 \`${prefix} unequip weapon\`
 
 ━━━━━━━━━━━━━━━━━━
@@ -133,6 +157,16 @@ Chance to avoid enemy attacks
 
 💥 Crit
 Chance to deal x2 damage
+
+━━━━━━━━━━━━━━━━━━
+💎 QUALITY INFO
+━━━━━━━━━━━━━━━━━━
+
+🟢 Common
+Basic equipment quality
+
+🔵 Rare
+Stronger equipment with randomized higher stats
 
 ━━━━━━━━━━━━━━━━━━
 📖 CLASS INFO
@@ -159,7 +193,9 @@ Show all commands
 
 🌍 Explore worlds
 ⚔️ Defeat monsters
+🎁 Hunt for rare loot
 🎒 Collect equipment
+💰 Sell extra items
 🔥 Level up
 👑 Become the strongest adventurer
 in Syxth MMORPG

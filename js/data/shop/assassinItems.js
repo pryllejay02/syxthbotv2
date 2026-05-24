@@ -27,7 +27,7 @@ module.exports = generateClassItems({
       slot: "armor",
       name: "Shadow Armor",
       type: "Armor",
-      emoji: "🛡️",
+      emoji: "🦺",
       stats: { attack: 0, defense: 5, maxHp: 25, dodge: 2, crit: 2 },
     },
     {

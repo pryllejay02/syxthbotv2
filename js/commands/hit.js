@@ -84,23 +84,27 @@ if (droppedItem) {
     });
   }
 }
-    await playerRef.update({
-      level: levelResult.level,
-      exp: levelResult.exp,
-      gold: newGold,
-      inventory,
+await playerRef.update({
+  level: levelResult.level,
+  exp: levelResult.exp,
+  gold: newGold,
+  inventory,
 
-      baseStats: levelResult.baseStats,
+  baseStats: levelResult.baseStats,
 
-      hp: finalHp,
-      maxHp: totalStats.maxHp,
-      attack: totalStats.attack,
-      defense: totalStats.defense,
-      dodge: totalStats.dodge,
-      crit: totalStats.crit,
+  hp: finalHp,
+  maxHp: totalStats.maxHp,
+  attack: totalStats.attack,
+  defense: totalStats.defense,
+  dodge: totalStats.dodge,
+  crit: totalStats.crit,
 
-      reviveAvailableAt: null,
-    });
+  // leaderboard tracking
+  monsterKills:
+    Number(player.monsterKills || 0) + 1,
+
+  reviveAvailableAt: null,
+});
 
     await battleRef.delete();
 
@@ -124,13 +128,18 @@ if (droppedItem) {
     .join(", ");
 
   reply +=
-    `\n🎁 **LOOT DROP!**\n` +
-    `${droppedItem.emoji || "📦"} **${droppedItem.name}**\n` +
-    `🏷️ ID: \`${droppedItem.id}\`\n` +
-    `⭐ Quality: **${droppedItem.qualityEmoji} ${droppedItem.quality}**\n` +
-    `🔓 Level: **Lv.${droppedItem.requiredLevel || 1}**\n` +
-    `🎭 Class: **${className}**\n` +
-    `✨ ${droppedItem.description}\n`;
+  `\n🎁 **LOOT DROP!**\n` +
+  `${droppedItem.emoji || "📦"} **${droppedItem.name}**\n` +
+  `🏷️ ID: \`${droppedItem.id}\`\n` +
+  `Quality: **${droppedItem.quality}**\n` +
+  `🔓 Level: **Lv.${droppedItem.requiredLevel || 1}**\n` +
+  `🎭 Class: **${className}**\n\n` +
+
+  `⚔️ ATK: ${droppedItem.stats.attack || 0}\n` +
+  `🛡️ DEF: ${droppedItem.stats.defense || 0}\n` +
+  `❤️ HP: ${droppedItem.stats.maxHp || 0}\n` +
+  `💨 Dodge: ${droppedItem.stats.dodge || 0}%\n` +
+  `💥 Crit: ${droppedItem.stats.crit || 0}%\n`;
 
 } else if (Number(battle.monsterLevel || 1) >= 5) {
   reply += `\n🎁 **Loot Drop:** None\n`;

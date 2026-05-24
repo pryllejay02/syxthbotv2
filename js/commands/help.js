@@ -47,9 +47,9 @@ Chance to avoid enemy attacks
 Lv.5+ monsters can drop equipment
 
 Drop Rates:
-🟢 Common: 50%
-🔵 Rare: 30%
-❌ No Drop: 20%
+🟢 Common: 45%
+🔵 Rare: 15%
+❌ No Drop: 40%
 
 Loot Rules:
 • Monster Lv.5 drops Lv.5 items
@@ -83,13 +83,24 @@ Example:
 \`${prefix} sell <item_id> <quantity>\`
 Sell item(s) for gold
 
-Example:
+Examples:
 \`${prefix} sell archer_iron_weapon 1\`
+\`${prefix} sell archer_iron_weapon all\`
 
-Note:
+\`${prefix} sell all\`
+Sell every sellable item in your inventory
+
+\`${prefix} sell all common\`
+Sell all Common items
+
+\`${prefix} sell all rare\`
+Sell all Rare items
+
+Sell Notes:
 • Starter equipment cannot be sold
 • Rare drops sell for more gold
 • Use \`${prefix} inv\` to copy the item ID
+• Selling all will remove all sellable inventory items
 
 ━━━━━━━━━━━━━━━━━━
 🏪 SHOP COMMANDS

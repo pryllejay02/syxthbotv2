@@ -131,7 +131,7 @@ if (droppedItem) {
   `\n🎁 **LOOT DROP!**\n` +
   `${droppedItem.emoji || "📦"} **${droppedItem.name}**\n` +
   `🏷️ ID: \`${droppedItem.id}\`\n` +
-  `Quality: **${droppedItem.quality}**\n` +
+  `⭐ Quality: **${droppedItem.qualityEmoji} ${droppedItem.quality}**\n` +
   `🔓 Level: **Lv.${droppedItem.requiredLevel || 1}**\n` +
   `🎭 Class: **${className}**\n\n` +
 

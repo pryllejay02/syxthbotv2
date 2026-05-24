@@ -36,22 +36,22 @@ module.exports = async function shopCommand(message, args = []) {
   }
 
   const itemsText = filteredItems
-    .slice(0, 15)
-    .map((item) => {
-      const icon = item.emoji || "📦";
-      const qualityEmoji = getQualityEmoji(item.quality);
+  .slice(0, 15)
+  .map((item) => {
+    const icon = item.emoji || "📦";
+    const qualityEmoji = getQualityEmoji(item.quality);
 
-      return (
-        `${icon} ${qualityEmoji} **${item.name}**\n` +
-        `🏷️ ID: \`${item.id}\`\n` +
-        `⭐ ${item.quality || "Common"} • ${item.type}\n` +
-        `🔓 Required: Lv.${item.requiredLevel || 1}\n` +
-        `🎭 Class: \`${(item.compatibleClasses || ["all"]).join(", ")}\`\n` +
-        `💰 ${item.price} Gold\n` +
-        `✨ ${item.description}`
-      );
-    })
-    .join("\n\n");
+    return (
+      `${icon} **${item.name}**\n` +
+      `🏷️ ID: \`${item.id}\`\n` +
+      `${qualityEmoji} ${item.quality || "Common"} • ${item.type}\n` +
+      `🔓 Required: Lv.${item.requiredLevel || 1}\n` +
+      `🎭 Class: \`${(item.compatibleClasses || ["all"]).join(", ")}\`\n` +
+      `💰 ${item.price} Gold\n` +
+      `✨ ${item.description}`
+    );
+  })
+  .join("\n\n");
 
   const embed = new EmbedBuilder()
     .setColor("#8B0000")

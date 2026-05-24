@@ -28,6 +28,29 @@ function formatClass(classes = []) {
     .join(", ");
 }
 
+function formatStats(stats = {}) {
+  const result = [];
+
+  if (stats.attack)
+    result.push(`⚔️ +${stats.attack}`);
+
+  if (stats.defense)
+    result.push(`🛡️ +${stats.defense}`);
+
+  if (stats.maxHp)
+    result.push(`❤️ +${stats.maxHp}`);
+
+  if (stats.dodge)
+    result.push(`💨 +${stats.dodge}%`);
+
+  if (stats.crit)
+    result.push(`💥 +${stats.crit}%`);
+
+  return result.length
+    ? result.join(" • ")
+    : "No stats";
+}
+
 module.exports = async function inventoryCommand(message) {
   const userId = message.author.id;
   const playerRef = db.collection("players").doc(userId);
@@ -49,17 +72,21 @@ module.exports = async function inventoryCommand(message) {
       : inventory
           .map((item) => {
             const emoji = getItemEmoji(item);
-            const qualityEmoji = getQualityEmoji(
-              item.quality || "Common"
-            );
 
-            const quantity = Number(item.quantity || 1);
+            const qualityEmoji =
+              getQualityEmoji(
+                item.quality || "Common"
+              );
+
+            const quantity =
+              Number(item.quantity || 1);
 
             return (
               `${emoji} **${item.name || "Unknown Item"}** x${quantity}\n` +
               `└ ${qualityEmoji} ${item.quality || "Common"} • ${item.type || "Unknown"}\n` +
               `└ 🔓 Lv.${item.requiredLevel || 1}\n` +
               `└ 🎭 ${formatClass(item.compatibleClasses || ["all"])}\n` +
+              `└ 📊 ${formatStats(item.stats)}\n` +
               `└ 🏷️ \`${item.id}\``
             );
           })

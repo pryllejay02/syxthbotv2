@@ -2,6 +2,7 @@ const { EmbedBuilder } = require("discord.js");
 const { db } = require("../../firebase/firebase");
 const { getRequiredExp, MAX_LEVEL } = require("../utils/levelSystem");
 const { getPlayerRank } = require("../data/ranks");
+const { getQualityEmoji } = require("../utils/qualitySystem");
 
 function createBar(current, max, size = 10) {
   if (max <= 0) return "░".repeat(size);
@@ -35,8 +36,8 @@ module.exports = async function profileCommand(message) {
   const gold = Number(player.gold ?? 0);
   const attack = Number(player.attack ?? 10);
   const defense = Number(player.defense ?? 5);
-  const dodge = Number(player.dodge ?? 0); // New stat
-  const crit = Number(player.crit ?? 0);   // New stat
+  const dodge = Number(player.dodge ?? 0);
+  const crit = Number(player.crit ?? 0);
 
   const playerClass = player.class || "Novice";
 
@@ -44,24 +45,25 @@ module.exports = async function profileCommand(message) {
   const equippedWeapon = equipment.weapon;
 
   const defaultWeaponByClass = {
-  swordsman: "🗡️ Wooden Sword",
-  archer: "🏹 Wooden Bow",
-  assassin: "🗡️ Training Dagger",
-  tanker: "🛡️ Wooden Shield",
-};
+    swordsman: "🗡️ 🌱 Wooden Sword",
+    archer: "🏹 🌱 Wooden Bow",
+    assassin: "🗡️ 🌱 Training Dagger",
+    tanker: "🛡️ 🌱 Wooden Shield",
+  };
 
-const weapon = equippedWeapon
-  ? `${equippedWeapon.emoji || "🗡️"} ${equippedWeapon.name}`
-  : defaultWeaponByClass[player.classId] || player.weapon || "🗡️ Wooden Sword";
+  const weapon = equippedWeapon
+    ? `${equippedWeapon.emoji || "🗡️"} ${
+        equippedWeapon.quality === "Starter"
+          ? "🌱"
+          : getQualityEmoji(equippedWeapon.quality)
+      } ${equippedWeapon.name}`
+    : defaultWeaponByClass[player.classId] || player.weapon || "🗡️ 🌱 Wooden Sword";
 
   const worldName = player.world?.name || "No World Selected";
-
   const rank = getPlayerRank(level);
-
   const status = hp <= 0 ? "Defeated 💀" : "Alive 🟢";
 
-  const requiredExp =
-    level >= MAX_LEVEL ? 0 : getRequiredExp(level);
+  const requiredExp = level >= MAX_LEVEL ? 0 : getRequiredExp(level);
 
   const expDisplay =
     level >= MAX_LEVEL

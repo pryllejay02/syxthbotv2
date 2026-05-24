@@ -1,5 +1,6 @@
 const { db } = require("../../firebase/firebase");
 const shopItems = require("../data/shopItems");
+const { getQualityEmoji } = require("../utils/qualitySystem");
 
 function canUseItem(player, item) {
   if (!item.compatibleClasses) return true;
@@ -25,7 +26,7 @@ module.exports = async function buyCommand(message, args = []) {
 
   if (!itemId) {
     return message.reply(
-      "❌ Please specify an item ID.\n\nExample: `!s buy hp_potion 5`"
+      "❌ Please specify an item ID.\n\nExample: `!s buy archer_iron_weapon_common 1`"
     );
   }
 
@@ -77,6 +78,7 @@ module.exports = async function buyCommand(message, args = []) {
     name: item.name,
     type: item.type,
     quality: item.quality || "Common",
+    qualityEmoji: getQualityEmoji(item.quality),
     requiredLevel: item.requiredLevel || 1,
     compatibleClasses: item.compatibleClasses || ["all"],
     quantity,
@@ -114,9 +116,11 @@ module.exports = async function buyCommand(message, args = []) {
     inventory,
   });
 
+  const qualityEmoji = getQualityEmoji(item.quality);
+
   return message.reply(
-    `${item.emoji || "📦"} You bought **${item.name} x${quantity}**!\n\n` +
-      `🏷️ Quality: **${item.quality || "Common"}**\n` +
+    `${item.emoji || "📦"} ${qualityEmoji} You bought **${item.name} x${quantity}**!\n\n` +
+      `🏷️ Quality: **${qualityEmoji} ${item.quality || "Common"}**\n` +
       `🎭 Class: **${(item.compatibleClasses || ["all"]).join(", ")}**\n` +
       `🔓 Required Level: **Lv.${item.requiredLevel || 1}**\n` +
       `💰 Gold Spent: **${totalCost}**\n` +

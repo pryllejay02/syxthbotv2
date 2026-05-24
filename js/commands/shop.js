@@ -1,6 +1,7 @@
 const { EmbedBuilder } = require("discord.js");
 const { db } = require("../../firebase/firebase");
 const shopItems = require("../data/shopItems");
+const { getQualityEmoji } = require("../utils/qualitySystem");
 
 function canUseItem(player, item) {
   if (!item.compatibleClasses) return true;
@@ -20,7 +21,6 @@ module.exports = async function shopCommand(message, args = []) {
   }
 
   const player = playerDoc.data();
-
   const requestedLevel = Number(args[0] || 1);
 
   const filteredItems = shopItems.filter(
@@ -36,12 +36,13 @@ module.exports = async function shopCommand(message, args = []) {
   }
 
   const itemsText = filteredItems
-    .slice(0, 10)
+    .slice(0, 15)
     .map((item) => {
       const icon = item.emoji || "📦";
+      const qualityEmoji = getQualityEmoji(item.quality);
 
       return (
-        `${icon} **${item.name}**\n` +
+        `${icon} ${qualityEmoji} **${item.name}**\n` +
         `🏷️ ID: \`${item.id}\`\n` +
         `⭐ ${item.quality || "Common"} • ${item.type}\n` +
         `🔓 Required: Lv.${item.requiredLevel || 1}\n` +
@@ -62,7 +63,7 @@ module.exports = async function shopCommand(message, args = []) {
         `🛒 Buy Item:\n` +
         `\`!s buy <item_id> <quantity>\`\n\n` +
         `📖 Example:\n` +
-        `\`!s buy hp_potion 5\`\n\n` +
+        `\`!s buy archer_iron_weapon_common 1\`\n\n` +
         `🗂️ Available Shop Levels:\n` +
         `\`1 5 10 15 20 25 30 35 40 45 50 55 60 65 70 75 80 85 90\``
     )

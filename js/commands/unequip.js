@@ -1,5 +1,6 @@
 const { db } = require("../../firebase/firebase");
 const { calculateTotalStats } = require("../utils/statSystem");
+const { getQualityEmoji } = require("../utils/qualitySystem");
 
 module.exports = async function unequipCommand(message, args = []) {
   const userId = message.author.id;
@@ -55,6 +56,8 @@ module.exports = async function unequipCommand(message, args = []) {
     );
   }
 
+  const qualityEmoji = getQualityEmoji(item.quality);
+
   equipment[slot] = null;
 
   const inventory = player.inventory || [];
@@ -101,7 +104,8 @@ module.exports = async function unequipCommand(message, args = []) {
   });
 
   return message.reply(
-    `${item.emoji || "📦"} Unequipped **${item.name}** from **${slot}**.\n\n` +
+    `${item.emoji || "📦"} ${qualityEmoji} Unequipped **${item.name}** from **${slot}**.\n\n` +
+      `Quality: **${qualityEmoji} ${item.quality || "Common"}**\n` +
       `⚔️ Attack: ${totalStats.attack}\n` +
       `🛡️ Defense: ${totalStats.defense}\n` +
       `❤️ Max HP: ${totalStats.maxHp}\n` +

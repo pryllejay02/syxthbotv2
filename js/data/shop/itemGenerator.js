@@ -1,3 +1,5 @@
+const { QUALITIES, getQualityEmoji } = require("../utils/qualitySystem");
+
 const tiers = [
   [5, "iron"],
   [10, "steel"],
@@ -38,13 +40,13 @@ function makeDescription(stats) {
   return parts.join(", ");
 }
 
-function makeStats(baseStats, scale) {
+function makeStats(baseStats, scale, qualityMultiplier = 1) {
   return {
-    attack: Math.floor((baseStats.attack || 0) * scale),
-    defense: Math.floor((baseStats.defense || 0) * scale),
-    maxHp: Math.floor((baseStats.maxHp || 0) * scale),
-    dodge: Number(((baseStats.dodge || 0) * scale).toFixed(1)),
-    crit: Number(((baseStats.crit || 0) * scale).toFixed(1)),
+    attack: Math.floor((baseStats.attack || 0) * scale * qualityMultiplier),
+    defense: Math.floor((baseStats.defense || 0) * scale * qualityMultiplier),
+    maxHp: Math.floor((baseStats.maxHp || 0) * scale * qualityMultiplier),
+    dodge: Number(((baseStats.dodge || 0) * scale * qualityMultiplier).toFixed(1)),
+    crit: Number(((baseStats.crit || 0) * scale * qualityMultiplier).toFixed(1)),
   };
 }
 
@@ -55,35 +57,49 @@ function generateClassItems(config) {
     const scale = index + 1;
     const tierName = toTitle(tier);
 
-    const weaponStats = makeStats(config.weapon.stats, scale);
+    Object.entries(QUALITIES).forEach(([quality, qualityData]) => {
+      const qualityId = quality.toLowerCase();
 
-    items.push({
-      id: `${config.classId}_${tier}_weapon`,
-      name: `Common ${tierName} ${config.weapon.name}`,
-      type: "Weapon",
-      quality: "Common",
-      requiredLevel: level,
-      compatibleClasses: [config.classId],
-      price: 100 + scale * 150,
-      description: makeDescription(weaponStats),
-      stats: weaponStats,
-      emoji: config.weapon.emoji,
-    });
-
-    config.gears.forEach((gear) => {
-      const gearStats = makeStats(gear.stats, scale);
+      const weaponStats = makeStats(
+        config.weapon.stats,
+        scale,
+        qualityData.statMultiplier
+      );
 
       items.push({
-        id: `${config.classId}_${tier}_${gear.slot}`,
-        name: `Common ${tierName} ${gear.name}`,
-        type: gear.type,
-        quality: "Common",
+        id: `${config.classId}_${tier}_weapon_${qualityId}`,
+        name: `${quality} ${tierName} ${config.weapon.name}`,
+        type: "Weapon",
+        quality,
+        qualityEmoji: getQualityEmoji(quality),
         requiredLevel: level,
         compatibleClasses: [config.classId],
-        price: 150 + scale * 150,
-        description: makeDescription(gearStats),
-        stats: gearStats,
-        emoji: gear.emoji,
+        price: Math.floor((100 + scale * 150) * qualityData.priceMultiplier),
+        description: makeDescription(weaponStats),
+        stats: weaponStats,
+        emoji: config.weapon.emoji,
+      });
+
+      config.gears.forEach((gear) => {
+        const gearStats = makeStats(
+          gear.stats,
+          scale,
+          qualityData.statMultiplier
+        );
+
+        items.push({
+          id: `${config.classId}_${tier}_${gear.slot}_${qualityId}`,
+          name: `${quality} ${tierName} ${gear.name}`,
+          type: gear.type,
+          quality,
+          qualityEmoji: getQualityEmoji(quality),
+          requiredLevel: level,
+          compatibleClasses: [config.classId],
+          price: Math.floor((150 + scale * 150) * qualityData.priceMultiplier),
+          description: makeDescription(gearStats),
+          stats: gearStats,
+          emoji: gear.emoji,
+        });
       });
     });
   });

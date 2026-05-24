@@ -1,5 +1,6 @@
 const { db } = require("../../firebase/firebase");
 const { calculateTotalStats } = require("../utils/statSystem");
+const { getQualityEmoji } = require("../utils/qualitySystem");
 
 function getSlot(type) {
   const itemType = String(type || "").toLowerCase();
@@ -29,7 +30,7 @@ module.exports = async function equipCommand(message, args = []) {
 
   if (!itemId) {
     return message.reply(
-      "❌ Please specify an item ID.\n\nExample: `!s equip swordsman_iron_weapon`"
+      "❌ Please specify an item ID.\n\nExample: `!s equip archer_iron_weapon_common`"
     );
   }
 
@@ -52,6 +53,7 @@ module.exports = async function equipCommand(message, args = []) {
 
   const item = inventory[itemIndex];
   const slot = getSlot(item.type);
+  const qualityEmoji = getQualityEmoji(item.quality);
 
   if (!slot) {
     return message.reply("❌ This item cannot be equipped.");
@@ -122,6 +124,7 @@ module.exports = async function equipCommand(message, args = []) {
     name: item.name,
     type: item.type,
     quality: item.quality || "Common",
+    qualityEmoji,
     requiredLevel: item.requiredLevel || 1,
     compatibleClasses: item.compatibleClasses || ["all"],
     stats: item.stats || {
@@ -160,8 +163,9 @@ module.exports = async function equipCommand(message, args = []) {
   });
 
   return message.reply(
-    `${item.emoji || "📦"} Equipped **${item.name}**!\n\n` +
+    `${item.emoji || "📦"} ${qualityEmoji} Equipped **${item.name}**!\n\n` +
       `Slot: **${slot.toUpperCase()}**\n` +
+      `Quality: **${qualityEmoji} ${item.quality || "Common"}**\n` +
       `⚔️ Attack: ${totalStats.attack}\n` +
       `🛡️ Defense: ${totalStats.defense}\n` +
       `❤️ Max HP: ${totalStats.maxHp}\n` +

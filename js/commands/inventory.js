@@ -1,13 +1,11 @@
 const { EmbedBuilder } = require("discord.js");
 const { db } = require("../../firebase/firebase");
+const { getQualityEmoji } = require("../utils/qualitySystem");
 
-const shopItems = require("../data/shopItems");
-
-function getItemEmoji(item, shopItem) {
+function getItemEmoji(item) {
   if (item.emoji) return item.emoji;
-  if (shopItem?.emoji) return shopItem.emoji;
 
-  const type = String(item.type || shopItem?.type || "").toLowerCase();
+  const type = String(item.type || "").toLowerCase();
 
   if (type === "weapon") return "🗡️";
   if (type === "helmet") return "⛑️";
@@ -41,12 +39,13 @@ module.exports = async function inventoryCommand(message) {
       : inventory
           .map((item) => {
             const emoji = getItemEmoji(item);
-
+            const qualityEmoji = getQualityEmoji(item.quality);
             const quantity = item.quantity || 1;
 
             return (
-              `${emoji} **${item.name || "Unknown Item"}** x${quantity}\n` +
-              `└ ${item.quality || "Common"} • ${item.type || "Unknown"} • Lv.${item.requiredLevel || 1}`
+              `${emoji} ${qualityEmoji} **${item.name || "Unknown Item"}** x${quantity}\n` +
+              `└ ${qualityEmoji} ${item.quality || "Common"} • ${item.type || "Unknown"} • Lv.${item.requiredLevel || 1}\n` +
+              `└ ID: \`${item.id}\``
             );
           })
           .join("\n\n");
@@ -56,10 +55,10 @@ module.exports = async function inventoryCommand(message) {
     .setTitle("🎒 SYXTH INVENTORY")
     .setDescription(
       `👤 ${player.username}\n` +
-      `🎭 Class: ${player.class || "Unknown"}\n` +
-      `🪙 Gold: ${player.gold || 0}\n\n` +
-      `━━━━━━━━━━━━━━━━━━\n\n` +
-      `${itemsText}`
+        `🎭 Class: ${player.class || "Unknown"}\n` +
+        `🪙 Gold: ${player.gold || 0}\n\n` +
+        `━━━━━━━━━━━━━━━━━━\n\n` +
+        `${itemsText}`
     )
     .setThumbnail(
       message.author.displayAvatarURL({

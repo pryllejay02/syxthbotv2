@@ -2,9 +2,9 @@ const shopItems = require("../data/shopItems");
 const { getQualityEmoji } = require("./qualitySystem");
 
 const DROP_RATES = {
-  rare: 30,
-  common: 50,
-  none: 20,
+  rare: 15,
+  common: 45,
+  none: 40,
 };
 
 function rollDropQuality() {

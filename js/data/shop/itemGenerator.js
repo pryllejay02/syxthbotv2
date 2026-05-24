@@ -1,4 +1,4 @@
-const { QUALITIES, getQualityEmoji } = require("../utils/qualitySystem");
+const { QUALITIES, getQualityEmoji } = require("../../utils/qualitySystem");
 
 const tiers = [
   [5, "iron"],

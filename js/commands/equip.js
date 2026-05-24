@@ -30,7 +30,7 @@ module.exports = async function equipCommand(message, args = []) {
 
   if (!itemId) {
     return message.reply(
-      "❌ Please specify an item ID.\n\nExample: `!s equip archer_iron_weapon_common`"
+      "❌ Please specify an item ID.\n\nExample: `!s equip archer_iron_weapon`"
     );
   }
 
@@ -163,7 +163,7 @@ module.exports = async function equipCommand(message, args = []) {
   });
 
   return message.reply(
-    `${item.emoji || "📦"} ${qualityEmoji} Equipped **${item.name}**!\n\n` +
+    `${item.emoji || "📦"} Equipped **${item.name}**!\n\n` +
       `Slot: **${slot.toUpperCase()}**\n` +
       `Quality: **${qualityEmoji} ${item.quality || "Common"}**\n` +
       `⚔️ Attack: ${totalStats.attack}\n` +

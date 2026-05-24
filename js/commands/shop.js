@@ -63,7 +63,7 @@ module.exports = async function shopCommand(message, args = []) {
         `🛒 Buy Item:\n` +
         `\`!s buy <item_id> <quantity>\`\n\n` +
         `📖 Example:\n` +
-        `\`!s buy archer_iron_weapon_common 1\`\n\n` +
+        `\`!s buy archer_iron_weapon 1\`\n\n` +
         `🗂️ Available Shop Levels:\n` +
         `\`1 5 10 15 20 25 30 35 40 45 50 55 60 65 70 75 80 85 90\``
     )

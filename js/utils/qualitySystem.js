@@ -5,17 +5,12 @@ const QUALITIES = {
     statMultiplier: 1,
     priceMultiplier: 1,
   },
+
   Rare: {
     emoji: "🔵",
     color: "#3B82F6",
     statMultiplier: 1.5,
     priceMultiplier: 2,
-  },
-  Legendary: {
-    emoji: "🟠",
-    color: "#F59E0B",
-    statMultiplier: 2.5,
-    priceMultiplier: 5,
   },
 };
 
@@ -28,7 +23,7 @@ function getQualityEmoji(quality = "Common") {
 }
 
 function formatItemName(item) {
-  return `${getQualityEmoji(item.quality)} ${item.name}`;
+  return `${item.name}`;
 }
 
 module.exports = {

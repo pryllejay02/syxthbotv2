@@ -1,6 +1,7 @@
 const { db } = require("../../firebase/firebase");
 const { applyLevelUp, MAX_LEVEL } = require("../utils/levelSystem");
 const { calculateTotalStats } = require("../utils/statSystem");
+const { generateMonsterDrop } = require("../utils/lootSystem");
 
 function calculateDamage(attackerAttack, defenderDefense) {
   const baseDamage = attackerAttack - defenderDefense;
@@ -62,10 +63,32 @@ module.exports = async function hitCommand(message) {
 
     const finalHp = levelResult.leveledUp ? totalStats.maxHp : playerHp;
 
+    const inventory = player.inventory || [];
+    const droppedItem = generateMonsterDrop(Number(battle.monsterLevel || 1));
+
+if (droppedItem) {
+  const existingItemIndex = inventory.findIndex(
+    (item) =>
+      item.baseItemId === droppedItem.baseItemId &&
+      item.quality === droppedItem.quality &&
+      JSON.stringify(item.stats) === JSON.stringify(droppedItem.stats)
+  );
+
+  if (existingItemIndex !== -1) {
+    inventory[existingItemIndex].quantity =
+      Number(inventory[existingItemIndex].quantity || 1) + 1;
+  } else {
+    inventory.push({
+      ...droppedItem,
+      quantity: 1,
+    });
+  }
+}
     await playerRef.update({
       level: levelResult.level,
       exp: levelResult.exp,
       gold: newGold,
+      inventory,
 
       baseStats: levelResult.baseStats,
 
@@ -91,6 +114,27 @@ module.exports = async function hitCommand(message) {
     reply += `+${battle.monsterExp} EXP\n`;
     reply += `+${battle.monsterGold} Gold\n`;
 
+if (droppedItem) {
+  const className = (droppedItem.compatibleClasses || ["all"])
+    .map(
+      (cls) =>
+        cls.charAt(0).toUpperCase() +
+        cls.slice(1)
+    )
+    .join(", ");
+
+  reply +=
+    `\n🎁 **LOOT DROP!**\n` +
+    `${droppedItem.emoji || "📦"} **${droppedItem.name}**\n` +
+    `🏷️ ID: \`${droppedItem.id}\`\n` +
+    `⭐ Quality: **${droppedItem.qualityEmoji} ${droppedItem.quality}**\n` +
+    `🔓 Level: **Lv.${droppedItem.requiredLevel || 1}**\n` +
+    `🎭 Class: **${className}**\n` +
+    `✨ ${droppedItem.description}\n`;
+
+} else if (Number(battle.monsterLevel || 1) >= 5) {
+  reply += `\n🎁 **Loot Drop:** None\n`;
+}
     if (levelResult.leveledUp) {
       reply += `\n🔥 **LEVEL UP!**\n`;
       reply += `You are now **Level ${levelResult.level}**.\n`;

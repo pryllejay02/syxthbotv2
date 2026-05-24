@@ -45,19 +45,21 @@ module.exports = async function profileCommand(message) {
   const equippedWeapon = equipment.weapon;
 
   const defaultWeaponByClass = {
-    swordsman: "🗡️ 🌱 Wooden Sword",
-    archer: "🏹 🌱 Wooden Bow",
-    assassin: "🗡️ 🌱 Training Dagger",
-    tanker: "🛡️ 🌱 Wooden Shield",
-  };
+  swordsman: "🗡️ Wooden Sword",
+  archer: "🏹 Wooden Bow",
+  assassin: "🗡️ Training Dagger",
+  tanker: "🛡️ Wooden Shield",
+};
 
-  const weapon = equippedWeapon
-    ? `${equippedWeapon.emoji || "🗡️"} ${
-        equippedWeapon.quality === "Starter"
-          ? "🌱"
-          : getQualityEmoji(equippedWeapon.quality)
-      } ${equippedWeapon.name}`
-    : defaultWeaponByClass[player.classId] || player.weapon || "🗡️ 🌱 Wooden Sword";
+const weapon = equippedWeapon
+  ? `${equippedWeapon.emoji || "🗡️"} ${equippedWeapon.name}`
+  : defaultWeaponByClass[player.classId] || player.weapon || "🗡️ Wooden Sword";
+
+const weaponQuality = equippedWeapon
+  ? equippedWeapon.quality === "Starter"
+    ? "🌱 Starter"
+    : `${getQualityEmoji(equippedWeapon.quality)} ${equippedWeapon.quality}`
+  : "🌱 Starter";
 
   const worldName = player.world?.name || "No World Selected";
   const rank = getPlayerRank(level);
@@ -114,7 +116,8 @@ module.exports = async function profileCommand(message) {
           `**Defense:** ${defense}\n` +
           `**Dodge:** ${dodge.toFixed(1)}%\n` +
           `**Crit:** ${crit.toFixed(1)}%\n` +
-          `**Weapon:** ${weapon}`,
+          `**Weapon:** ${weapon}\n` +
+          `**Weapon Quality:** ${weaponQuality}`,
         inline: true,
       },
       {

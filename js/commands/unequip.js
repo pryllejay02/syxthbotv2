@@ -103,13 +103,13 @@ module.exports = async function unequipCommand(message, args = []) {
     hp: newHp,
   });
 
-  return message.reply(
-    `${item.emoji || "📦"} ${qualityEmoji} Unequipped **${item.name}** from **${slot}**.\n\n` +
-      `Quality: **${qualityEmoji} ${item.quality || "Common"}**\n` +
-      `⚔️ Attack: ${totalStats.attack}\n` +
-      `🛡️ Defense: ${totalStats.defense}\n` +
-      `❤️ Max HP: ${totalStats.maxHp}\n` +
-      `💨 Dodge: ${Number(totalStats.dodge || 0).toFixed(1)}%\n` +
-      `💥 Crit: ${Number(totalStats.crit || 0).toFixed(1)}%`
-  );
+return message.reply(
+  `${item.emoji || "📦"} Unequipped **${item.name}** from **${slot}**.\n\n` +
+    `Quality: **${qualityEmoji} ${item.quality || "Common"}**\n` +
+    `⚔️ Attack: ${totalStats.attack}\n` +
+    `🛡️ Defense: ${totalStats.defense}\n` +
+    `❤️ Max HP: ${totalStats.maxHp}\n` +
+    `💨 Dodge: ${Number(totalStats.dodge || 0).toFixed(1)}%\n` +
+    `💥 Crit: ${Number(totalStats.crit || 0).toFixed(1)}%`
+);
 };

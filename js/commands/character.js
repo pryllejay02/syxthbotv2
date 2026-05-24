@@ -31,12 +31,18 @@ module.exports = async function characterCommand(message) {
   function showItem(item, emptyText) {
     if (!item) return `Empty ${emptyText}`;
 
+    return `${item.emoji || "📦"} ${item.name}`;
+  }
+
+  function showQuality(item) {
+    if (!item) return "";
+
     const qualityEmoji =
       item.quality === "Starter"
         ? "🌱"
         : getQualityEmoji(item.quality);
 
-    return `${item.emoji || "📦"} ${qualityEmoji} ${item.name}`;
+    return `└ ${qualityEmoji} ${item.quality}`;
   }
 
   const embed = new EmbedBuilder()
@@ -44,25 +50,37 @@ module.exports = async function characterCommand(message) {
     .setTitle("🧙 SYXTH CHARACTER")
     .setDescription(
       `👤 **${player.username}**\n` +
-        `${player.classEmoji || "⚔️"} Class: **${player.class || "Novice"}**\n` +
-        `⭐ Level: **${player.level || 1}**\n` +
-        `❤️ HP: **${player.hp || 0}/${player.maxHp || 100}**\n` +
-        `⚔️ Attack: **${player.attack || 10}**\n` +
-        `🛡️ Defense: **${player.defense || 5}**\n` +
-        `💨 Dodge: **${dodge.toFixed(1)}%**\n` +
-        `💥 Crit: **${crit.toFixed(1)}%**\n\n` +
-        `━━━━━━━━━━━━━━━━━━\n\n` +
+      `${player.classEmoji || "⚔️"} Class: **${player.class || "Novice"}**\n` +
+      `⭐ Level: **${player.level || 1}**\n` +
+      `❤️ HP: **${player.hp || 0}/${player.maxHp || 100}**\n` +
+      `⚔️ Attack: **${player.attack || 10}**\n` +
+      `🛡️ Defense: **${player.defense || 5}**\n` +
+      `💨 Dodge: **${dodge.toFixed(1)}%**\n` +
+      `💥 Crit: **${crit.toFixed(1)}%**\n\n` +
 
-        `**Weapon:** ${showItem(equipment.weapon, "Weapon")}\n` +
-        `**Helmet:** ${showItem(equipment.helmet, "Helmet")}\n` +
-        `**Armor:** ${showItem(equipment.armor, "Armor")}\n` +
-        `**Gloves:** ${showItem(equipment.gloves, "Gloves")}\n` +
-        `**Pants:** ${showItem(equipment.pants, "Pants")}\n` +
-        `**Boots:** ${showItem(equipment.boots, "Boots")}\n\n` +
+      `━━━━━━━━━━━━━━━━━━\n\n` +
 
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `Equip: \`!s equip <item_id>\`\n` +
-        `Unequip: \`!s unequip <slot>\``
+      `**Weapon:** ${showItem(equipment.weapon, "Weapon")}\n` +
+      `${showQuality(equipment.weapon)}\n\n` +
+
+      `**Helmet:** ${showItem(equipment.helmet, "Helmet")}\n` +
+      `${showQuality(equipment.helmet)}\n\n` +
+
+      `**Armor:** ${showItem(equipment.armor, "Armor")}\n` +
+      `${showQuality(equipment.armor)}\n\n` +
+
+      `**Gloves:** ${showItem(equipment.gloves, "Gloves")}\n` +
+      `${showQuality(equipment.gloves)}\n\n` +
+
+      `**Pants:** ${showItem(equipment.pants, "Pants")}\n` +
+      `${showQuality(equipment.pants)}\n\n` +
+
+      `**Boots:** ${showItem(equipment.boots, "Boots")}\n` +
+      `${showQuality(equipment.boots)}\n\n` +
+
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `Equip: \`!s equip <item_id>\`\n` +
+      `Unequip: \`!s unequip <slot>\``
     )
     .setThumbnail(
       message.author.displayAvatarURL({

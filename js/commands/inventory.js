@@ -9,13 +9,23 @@ function getItemEmoji(item) {
 
   if (type === "weapon") return "🗡️";
   if (type === "helmet") return "⛑️";
-  if (type === "armor") return "🛡️";
+  if (type === "armor") return "🥋";
   if (type === "gloves") return "🧤";
   if (type === "pants") return "👖";
   if (type === "boots") return "🥾";
   if (type === "consumable") return "🧪";
 
   return "📦";
+}
+
+function formatClass(classes = []) {
+  return classes
+    .map(
+      (cls) =>
+        cls.charAt(0).toUpperCase() +
+        cls.slice(1)
+    )
+    .join(", ");
 }
 
 module.exports = async function inventoryCommand(message) {
@@ -39,13 +49,18 @@ module.exports = async function inventoryCommand(message) {
       : inventory
           .map((item) => {
             const emoji = getItemEmoji(item);
-            const qualityEmoji = getQualityEmoji(item.quality);
-            const quantity = item.quantity || 1;
+            const qualityEmoji = getQualityEmoji(
+              item.quality || "Common"
+            );
+
+            const quantity = Number(item.quantity || 1);
 
             return (
-              `${emoji} ${qualityEmoji} **${item.name || "Unknown Item"}** x${quantity}\n` +
-              `└ ${qualityEmoji} ${item.quality || "Common"} • ${item.type || "Unknown"} • Lv.${item.requiredLevel || 1}\n` +
-              `└ ID: \`${item.id}\``
+              `${emoji} **${item.name || "Unknown Item"}** x${quantity}\n` +
+              `└ ${qualityEmoji} ${item.quality || "Common"} • ${item.type || "Unknown"}\n` +
+              `└ 🔓 Lv.${item.requiredLevel || 1}\n` +
+              `└ 🎭 ${formatClass(item.compatibleClasses || ["all"])}\n` +
+              `└ 🏷️ \`${item.id}\``
             );
           })
           .join("\n\n");
@@ -55,10 +70,10 @@ module.exports = async function inventoryCommand(message) {
     .setTitle("🎒 SYXTH INVENTORY")
     .setDescription(
       `👤 ${player.username}\n` +
-        `🎭 Class: ${player.class || "Unknown"}\n` +
-        `🪙 Gold: ${player.gold || 0}\n\n` +
-        `━━━━━━━━━━━━━━━━━━\n\n` +
-        `${itemsText}`
+      `🎭 Class: ${player.class || "Unknown"}\n` +
+      `🪙 Gold: ${player.gold || 0}\n\n` +
+      `━━━━━━━━━━━━━━━━━━\n\n` +
+      itemsText
     )
     .setThumbnail(
       message.author.displayAvatarURL({
@@ -66,7 +81,7 @@ module.exports = async function inventoryCommand(message) {
       })
     )
     .setFooter({
-      text: "Syxth MMORPG Inventory",
+      text: `Items: ${inventory.length}`,
     });
 
   return message.reply({

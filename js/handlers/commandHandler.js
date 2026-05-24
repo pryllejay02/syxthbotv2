@@ -15,6 +15,7 @@ const characterCommand = require("../commands/character");
 const equipCommand = require("../commands/equip");
 const unequipCommand = require("../commands/unequip");
 const announceCommand = require("../commands/announce");
+const sellCommand = require("../commands/sell");
 
 module.exports = async function commandHandler(client, message, prefix) {
   try {
@@ -85,6 +86,7 @@ module.exports = async function commandHandler(client, message, prefix) {
       equip: () => equipCommand(message, args),
       unequip: () => unequipCommand(message, args),
       announce: () => announceCommand(message, args),
+      sell: () => sellCommand(message, args),
     };
 
     if (commands[command]) {

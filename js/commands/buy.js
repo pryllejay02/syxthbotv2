@@ -26,7 +26,7 @@ module.exports = async function buyCommand(message, args = []) {
 
   if (!itemId) {
     return message.reply(
-      "❌ Please specify an item ID.\n\nExample: `!s buy archer_iron_weapon_common 1`"
+      "❌ Please specify an item ID.\n\nExample: `!s buy archer_iron_weapon 1`"
     );
   }
 

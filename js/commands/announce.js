@@ -22,17 +22,21 @@ module.exports = async function announceCommand(message, args = []) {
   if (!worldId || !announcement) {
     return message.reply(
       "❌ Usage:\n" +
-        "`!s announce <world_id> <message>`\n\n" +
+        "`!s announce <world_id/all> <message>`\n\n" +
         "Example:\n" +
-        "`!s announce world_1 Server maintenance in 10 minutes.`"
+        "`!s announce world_1 Server maintenance in 10 minutes.`\n" +
+        "`!s announce all Server update is now live.`"
     );
   }
 
-  const world = worlds.find(
-    (w) => w.id.toLowerCase() === worldId.toLowerCase()
-  );
+  const targetWorlds =
+    worldId.toLowerCase() === "all"
+      ? worlds
+      : worlds.filter(
+          (w) => w.id.toLowerCase() === worldId.toLowerCase()
+        );
 
-  if (!world) {
+  if (targetWorlds.length === 0) {
     return message.reply("❌ World not found.");
   }
 
@@ -51,62 +55,79 @@ module.exports = async function announceCommand(message, args = []) {
     })
     .setTimestamp();
 
-  // Send to world notification channel
-  const notificationChannel = await message.guild.channels
-    .fetch(world.notificationChannelId)
-    .catch(() => null);
-
-  if (notificationChannel) {
-    await notificationChannel.send({
-      content: `<@&${world.roleId}>`,
-      embeds: [embed],
-      allowedMentions: {
-        roles: [world.roleId],
-      },
-    });
-  }
-
-  // Send to players' private rooms in this world
-  const playersSnapshot = await db
-    .collection("players")
-    .where("world.id", "==", world.id)
-    .get();
-
+  let notificationSent = 0;
+  let notificationFailed = 0;
   let privateRoomSent = 0;
   let privateRoomFailed = 0;
 
-  for (const doc of playersSnapshot.docs) {
-    const player = doc.data();
-
-    if (!player.privateChannelId) {
-      privateRoomFailed++;
-      continue;
-    }
-
-    const privateChannel = await message.guild.channels
-      .fetch(player.privateChannelId)
+  for (const world of targetWorlds) {
+    const notificationChannel = await message.guild.channels
+      .fetch(world.notificationChannelId)
       .catch(() => null);
 
-    if (!privateChannel) {
-      privateRoomFailed++;
-      continue;
+    if (notificationChannel) {
+      await notificationChannel
+        .send({
+          content: `<@&${world.roleId}>`,
+          embeds: [embed],
+          allowedMentions: {
+            roles: [world.roleId],
+          },
+        })
+        .then(() => {
+          notificationSent++;
+        })
+        .catch(() => {
+          notificationFailed++;
+        });
+    } else {
+      notificationFailed++;
     }
 
-    await privateChannel
-      .send({
-        embeds: [embed],
-      })
-      .then(() => {
-        privateRoomSent++;
-      })
-      .catch(() => {
+    const playersSnapshot = await db
+      .collection("players")
+      .where("world.id", "==", world.id)
+      .get();
+
+    for (const doc of playersSnapshot.docs) {
+      const player = doc.data();
+
+      if (!player.privateChannelId) {
         privateRoomFailed++;
-      });
+        continue;
+      }
+
+      const privateChannel = await message.guild.channels
+        .fetch(player.privateChannelId)
+        .catch(() => null);
+
+      if (!privateChannel) {
+        privateRoomFailed++;
+        continue;
+      }
+
+      await privateChannel
+        .send({
+          embeds: [embed],
+        })
+        .then(() => {
+          privateRoomSent++;
+        })
+        .catch(() => {
+          privateRoomFailed++;
+        });
+    }
   }
 
+  const targetName =
+    worldId.toLowerCase() === "all"
+      ? "All Worlds"
+      : targetWorlds[0].name;
+
   return message.reply(
-    `✅ Divine announcement sent to **${world.name}**.\n\n` +
-      `📢 Notification Channel: ${notificationChannel ? "Sent" : "Not Found"}\n` +
+    `✅ Divine announcement sent to **${targetName}**.\n\n` +
+      `📢 Notification Channels Sent: **${notificationSent}**\n` +
+      `⚠️ Notification Channels Failed: **${notificationFailed}**\n` +
       `🏠 Private Rooms Sent: **${privateRoomSent}**\n` +
       `⚠️ Private Rooms Failed: **${privateRoomFailed}**`
   );

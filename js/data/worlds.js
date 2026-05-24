@@ -4,6 +4,7 @@ const worlds = [
     name: "Syxth Server 1",
     description: "Dawn of a dragon world",
     roleId: "1507279668225769533",
+    categoryId: "1507252050222780516",
     notificationChannelId: "1507252206427181107",
   },
   {
@@ -11,6 +12,7 @@ const worlds = [
     name: "Syxth Server 2",
     description: "Dark and dangerous world",
     roleId: "1507296510428315728",
+    categoryId: "1507940328483721327",
     notificationChannelId: "1507296885789032458",
   },
   {
@@ -18,6 +20,7 @@ const worlds = [
     name: "Syxth Server 3",
     description: "High-risk adventure world",
     roleId: "1507296710613798932",
+    categoryId: "1507940383571841124",
     notificationChannelId: "1507296938754576485",
   },
 ];

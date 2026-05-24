@@ -29,12 +29,12 @@ client.once("clientReady", () => {
   console.log("=================================");
 });
 
-client.on("messageCreate", (message) => {
-  commandHandler(client, message, prefix);
+client.on("messageCreate", async (message) => {
+  await commandHandler(client, message, prefix);
 });
 
-client.on("interactionCreate", (interaction) => {
-  worldSelection(interaction);
+client.on("interactionCreate", async (interaction) => {
+  await worldSelection(interaction);
 });
 
 client.on("guildMemberAdd", (member) => {

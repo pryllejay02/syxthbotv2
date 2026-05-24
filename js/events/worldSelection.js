@@ -209,27 +209,85 @@ if (interaction.customId.startsWith("select_class_")) {
 
   await playerRef.set(newPlayer);
 
-  if (GUEST_ROLE_ID) {
-    await member.roles.remove(GUEST_ROLE_ID).catch(() => {});
-  }
+// REMOVE GUEST ROLE
+if (GUEST_ROLE_ID) {
+  await member.roles.remove(GUEST_ROLE_ID).catch(() => {});
+}
 
-  await member.roles.add(selectedWorld.roleId);
+// ADD WORLD ROLE
+await member.roles.add(selectedWorld.roleId);
 
-  return interaction.editReply({
-    content:
-      `🔥 Your character has been created!\n\n` +
-      `🌍 World: **${selectedWorld.name}**\n` +
-      `${selectedClass.emoji} Class: **${selectedClass.name}**\n\n` +
-      `🗡️ Starter Weapon: **${starterWeaponName}**\n` +
-      `❤️ HP: **${newPlayer.hp}/${newPlayer.maxHp}**\n` +
-      `⚔️ Attack: **${newPlayer.attack}**\n` +
-      `🛡️ Defense: **${newPlayer.defense}**\n` +
-      `💨 Dodge: **${newPlayer.dodge}%**\n` +
-      `💥 Crit: **${newPlayer.crit}%**\n` +
-      `🪙 Gold: **${newPlayer.gold}**\n\n` +
-      `You now have access to your world channels.`,
-    components: [],
+// CHECK EXISTING ROOM
+const roomName = `${interaction.user.username
+  .toLowerCase()
+  .replace(/[^a-z0-9-]/g, "")}-room`;
+
+const existingChannel = interaction.guild.channels.cache.find(
+  (channel) =>
+    channel.name === roomName &&
+    channel.parentId === selectedWorld.categoryId
+);
+
+let playerRoom = existingChannel;
+
+if (!playerRoom) {
+  playerRoom = await interaction.guild.channels.create({
+    name: roomName,
+    type: 0, // text channel
+    parent: selectedWorld.categoryId,
+
+    permissionOverwrites: [
+      {
+        id: interaction.guild.id,
+        deny: [
+          "ViewChannel",
+        ],
+      },
+
+      {
+        id: userId,
+        allow: [
+          "ViewChannel",
+          "SendMessages",
+          "ReadMessageHistory",
+        ],
+      },
+
+      {
+        id: interaction.client.user.id,
+        allow: [
+          "ViewChannel",
+          "SendMessages",
+          "ReadMessageHistory",
+        ],
+      },
+    ],
   });
+}
+
+// SAVE ROOM ID
+await playerRef.update({
+  privateChannelId: playerRoom.id,
+});
+
+return interaction.editReply({
+  content:
+    `🔥 Your character has been created!\n\n` +
+    `🌍 World: **${selectedWorld.name}**\n` +
+    `${selectedClass.emoji} Class: **${selectedClass.name}**\n\n` +
+    `🗡️ Starter Weapon: **${starterWeaponName}**\n` +
+    `❤️ HP: **${newPlayer.hp}/${newPlayer.maxHp}**\n` +
+    `⚔️ Attack: **${newPlayer.attack}**\n` +
+    `🛡️ Defense: **${newPlayer.defense}**\n` +
+    `💨 Dodge: **${newPlayer.dodge}%**\n` +
+    `💥 Crit: **${newPlayer.crit}%**\n` +
+    `🪙 Gold: **${newPlayer.gold}**\n\n` +
+
+    `🏠 Private Room: <#${playerRoom.id}>\n\n` +
+
+    `Only you and the bot can access this room.`,
+  components: [],
+});
 }
   } catch (error) {
     console.error("World/Class selection error:", error);

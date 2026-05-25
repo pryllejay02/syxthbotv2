@@ -5,6 +5,7 @@ const { Client, GatewayIntentBits } = require("discord.js");
 const commandHandler = require("./handlers/commandHandler");
 const worldSelection = require("./events/worldSelection");
 const guildMemberAdd = require("./events/guildMemberAdd");
+const voiceStateUpdate = require("./events/voiceStateUpdate");
 
 const client = new Client({
   intents: [
@@ -12,6 +13,7 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildVoiceStates,
   ],
 });
 
@@ -39,6 +41,10 @@ client.on("interactionCreate", async (interaction) => {
 
 client.on("guildMemberAdd", (member) => {
   guildMemberAdd(member);
+});
+
+client.on("voiceStateUpdate", async (oldState, newState) => {
+  await voiceStateUpdate(oldState, newState);
 });
 
 console.log("TOKEN loaded:", process.env.TOKEN ? "YES" : "NO");

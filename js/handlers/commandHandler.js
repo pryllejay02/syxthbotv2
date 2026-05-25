@@ -18,6 +18,7 @@ const announceCommand = require("../commands/announce");
 const sellCommand = require("../commands/sell");
 const leaderboardCommand = require("../commands/leaderboard");
 const partyCommand = require("../commands/party");
+const raidCommand = require("../commands/raid");
 
 module.exports = async function commandHandler(client, message, prefix) {
   try {
@@ -42,7 +43,14 @@ module.exports = async function commandHandler(client, message, prefix) {
       );
     }
 
-    const publicCommands = ["start", "help", "ping", "announce", "party"];
+    const publicCommands = [
+      "start",
+      "help",
+      "ping",
+      "announce",
+      "party",
+      "raid",
+    ];
 
     if (!publicCommands.includes(command)) {
       const playerRef = db.collection("players").doc(message.author.id);
@@ -92,6 +100,7 @@ module.exports = async function commandHandler(client, message, prefix) {
       leaderboard: () => leaderboardCommand(message),
       lb: () => leaderboardCommand(message),
       party: () => partyCommand(message, args),
+      raid: () => raidCommand(message, args),
     };
 
     if (commands[command]) {

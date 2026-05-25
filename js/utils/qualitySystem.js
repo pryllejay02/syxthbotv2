@@ -12,6 +12,13 @@ const QUALITIES = {
     statMultiplier: 1.5,
     priceMultiplier: 2,
   },
+
+  Legendary: {
+    emoji: "🟠",
+    color: "#F59E0B",
+    statMultiplier: 2.5,
+    priceMultiplier: 5,
+  },
 };
 
 function getQualityData(quality = "Common") {
@@ -23,7 +30,7 @@ function getQualityEmoji(quality = "Common") {
 }
 
 function formatItemName(item) {
-  return `${item.name}`;
+  return `${getQualityEmoji(item.quality)} ${item.name}`;
 }
 
 module.exports = {

@@ -82,12 +82,8 @@ async function disbandParty(activeParty, guild) {
     }
   }
 
-  await db.collection("parties").doc(activeParty.id).update({
-    status: "disbanded",
-    members: [],
-    invited: [],
-    voiceChannelId: null,
-  });
+await db.collection("parties").doc(activeParty.id).delete();
+
 }
 
 module.exports = {

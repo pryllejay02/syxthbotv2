@@ -26,45 +26,63 @@ module.exports = async function voiceStateUpdate(oldState, newState) {
 
       if (!members.includes(userId)) continue;
 
-      const channel = oldState.guild.channels.cache.get(party.voiceChannelId);
+      const channel =
+        oldState.guild.channels.cache.get(
+          party.voiceChannelId
+        );
 
-      // If leader leaves, disband the whole party
+      // Leader left → remove entire party
       if (party.leaderId === userId) {
         if (channel) {
           await channel.delete().catch(() => null);
         }
 
-        await db.collection("parties").doc(doc.id).update({
-          status: "disbanded",
-          members: [],
-          invited: [],
-          voiceChannelId: null,
-        });
+        await db.collection("parties")
+          .doc(doc.id)
+          .delete();
+
+        console.log(
+          `Party ${doc.id} deleted because leader left`
+        );
 
         continue;
       }
 
-      // If normal member leaves, remove only that member
-      const updatedMembers = members.filter((id) => id !== userId);
+      // Remove normal member only
+      const updatedMembers =
+        members.filter(
+          (id) => id !== userId
+        );
 
-      await db.collection("parties").doc(doc.id).update({
-        members: updatedMembers,
-      });
+      await db.collection("parties")
+        .doc(doc.id)
+        .update({
+          members: updatedMembers,
+        });
 
       if (channel) {
-        await channel.permissionOverwrites.delete(userId).catch(() => null);
+        await channel.permissionOverwrites
+          .delete(userId)
+          .catch(() => null);
 
+        // Delete empty party
         if (updatedMembers.length === 0) {
           await channel.delete().catch(() => null);
 
-          await db.collection("parties").doc(doc.id).update({
-            status: "disbanded",
-            voiceChannelId: null,
-          });
+          await db.collection("parties")
+            .doc(doc.id)
+            .delete();
+
+          console.log(
+            `Party ${doc.id} deleted because no members remain`
+          );
         }
       }
     }
   } catch (error) {
-    console.error("voiceStateUpdate party error:", error);
+    console.error(
+      "voiceStateUpdate party error:",
+      error
+    );
   }
 };

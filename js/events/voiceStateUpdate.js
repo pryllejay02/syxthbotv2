@@ -26,13 +26,30 @@ module.exports = async function voiceStateUpdate(oldState, newState) {
 
       if (!members.includes(userId)) continue;
 
+      const channel = oldState.guild.channels.cache.get(party.voiceChannelId);
+
+      // If leader leaves, disband the whole party
+      if (party.leaderId === userId) {
+        if (channel) {
+          await channel.delete().catch(() => null);
+        }
+
+        await db.collection("parties").doc(doc.id).update({
+          status: "disbanded",
+          members: [],
+          invited: [],
+          voiceChannelId: null,
+        });
+
+        continue;
+      }
+
+      // If normal member leaves, remove only that member
       const updatedMembers = members.filter((id) => id !== userId);
 
       await db.collection("parties").doc(doc.id).update({
         members: updatedMembers,
       });
-
-      const channel = oldState.guild.channels.cache.get(party.voiceChannelId);
 
       if (channel) {
         await channel.permissionOverwrites.delete(userId).catch(() => null);

@@ -5,7 +5,7 @@ module.exports = {
     world_1: {
       roleId: "1507279668225769533",    
       formPartyChannelId: "1508355839646236823",
-      bossRaidChannelId: "1508356736124457110",
+      bossRaidChannelId: "1508356816369745950",
       partyQueueVoiceChannelId: "1508365170404102206",
       partyVoiceCategoryId: "1508365075457769552",
     },

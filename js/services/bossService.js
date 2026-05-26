@@ -31,10 +31,22 @@ async function spawnBoss(client, worldId, tier) {
 
   const existingBoss = await getActiveBoss(worldId);
 
-  if (existingBoss && existingBoss.status === "active") {
+if (existingBoss && existingBoss.status === "active") {
+  const spawnedAt = existingBoss.spawnedAt?.toDate
+    ? existingBoss.spawnedAt.toDate()
+    : new Date(existingBoss.spawnedAt);
+
+  const expireMinutes = Number(bossConfig.bossExpireMinutes || 120);
+  const expiresAt = spawnedAt.getTime() + expireMinutes * 60 * 1000;
+
+  if (Date.now() < expiresAt) {
     console.log(`Boss already active in ${worldId}`);
     return existingBoss;
   }
+
+  console.log(`Boss expired in ${worldId}. Clearing old boss...`);
+  await deleteBossData(worldId);
+}
 
   const boss = getRandomBossByTier(tier);
 
@@ -86,7 +98,26 @@ async function spawnBoss(client, worldId, tier) {
   return bossData;
 }
 
-async function saveDamage(worldId, player, damage, partyId = null) {
+function calculateThreatGain(player, damage) {
+  const defense = Number(player.defense || 0);
+  const classId = String(player.classId || "").toLowerCase();
+
+  const tankerBonus = classId === "tanker" ? 300 : 0;
+
+  return Math.floor(
+    Number(damage || 0) +
+      defense * 0.5 +
+      tankerBonus
+  );
+}
+
+async function saveDamage(
+  worldId,
+  player,
+  damage,
+  partyId = null,
+  threatGain = 0
+) {
   const damageRef = db
     .collection("worldBosses")
     .doc(worldId)
@@ -102,6 +133,7 @@ async function saveDamage(worldId, player, damage, partyId = null) {
       damage,
       hits: 1,
       partyId,
+      threat: Number(threatGain || 0),
       lastHitAt: new Date(),
     });
 
@@ -115,8 +147,45 @@ async function saveDamage(worldId, player, damage, partyId = null) {
     damage: Number(oldData.damage || 0) + damage,
     hits: Number(oldData.hits || 0) + 1,
     partyId: partyId || oldData.partyId || null,
+    threat: Number(oldData.threat || 0) + Number(threatGain || 0),
     lastHitAt: new Date(),
   });
+}
+
+async function pickBossTarget(worldId) {
+  const snapshot = await db
+    .collection("worldBosses")
+    .doc(worldId)
+    .collection("damage")
+    .get();
+
+  const participants = snapshot.docs
+    .map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }))
+    .filter((entry) => Number(entry.threat || 0) > 0);
+
+  if (participants.length === 0) return null;
+
+  const totalThreat = participants.reduce(
+    (total, entry) => total + Number(entry.threat || 0),
+    0
+  );
+
+  if (totalThreat <= 0) return null;
+
+  let roll = Math.random() * totalThreat;
+
+  for (const entry of participants) {
+    roll -= Number(entry.threat || 0);
+
+    if (roll <= 0) {
+      return entry;
+    }
+  }
+
+  return participants[0];
 }
 
 async function getDamageRanking(worldId, limit = 10) {
@@ -211,8 +280,12 @@ function rollChance(percent) {
 
 function getLegendaryChanceByRank(rank) {
   if (rank === 1) return bossConfig.rankingRewards.top1.legendaryChance;
-  if (rank >= 2 && rank <= 5) return bossConfig.rankingRewards.top2to5.legendaryChance;
-  if (rank >= 6 && rank <= 10) return bossConfig.rankingRewards.top6to10.legendaryChance;
+  if (rank >= 2 && rank <= 5) {
+    return bossConfig.rankingRewards.top2to5.legendaryChance;
+  }
+  if (rank >= 6 && rank <= 10) {
+    return bossConfig.rankingRewards.top6to10.legendaryChance;
+  }
 
   return 0;
 }
@@ -227,4 +300,8 @@ module.exports = {
   getRewardPenalty,
   rollChance,
   getLegendaryChanceByRank,
+
+  // Aggro v1
+  calculateThreatGain,
+  pickBossTarget,
 };

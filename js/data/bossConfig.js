@@ -33,7 +33,7 @@ module.exports = {
         rewards: {
           gold: 500,
           exp: 250,
-        }
+        },
       },
 
       {
@@ -53,8 +53,8 @@ module.exports = {
         rewards: {
           gold: 700,
           exp: 350,
-        }
-      }
+        },
+      },
     ],
 
     intermediate: [
@@ -75,8 +75,8 @@ module.exports = {
         rewards: {
           gold: 1500,
           exp: 700,
-        }
-      }
+        },
+      },
     ],
 
     advanced: [
@@ -97,34 +97,37 @@ module.exports = {
         rewards: {
           gold: 5000,
           exp: 3000,
-        }
-      }
-    ]
+        },
+      },
+    ],
   },
 
   rankingDeleteMinutes: 10,
 
+  // Boss will automatically disappear if not defeated
+  bossExpireMinutes: 120,
+
   participationRewards: {
-    rareChance: 30
+    rareChance: 30,
   },
 
   rankingRewards: {
     top1: {
-      legendaryChance: 20
+      legendaryChance: 20,
     },
 
     top2to5: {
-      legendaryChance: 10
+      legendaryChance: 10,
     },
 
     top6to10: {
-      legendaryChance: 5
-    }
+      legendaryChance: 5,
+    },
   },
 
   partyBonus: {
     legendaryChance: 5,
     gold: 5,
-    exp: 5
-  }
+    exp: 5,
+  },
 };

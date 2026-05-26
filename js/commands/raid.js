@@ -14,6 +14,8 @@ const {
   getRewardPenalty,
   rollChance,
   getLegendaryChanceByRank,
+  calculateThreatGain,
+  pickBossTarget,
 } = require("../services/bossService");
 
 const bossConfig = require("../data/bossConfig");
@@ -24,6 +26,53 @@ function calculateDamage(playerAttack, bossDefense) {
   const randomBonus = Math.floor(Math.random() * 15) + 5;
 
   return Math.max(1, baseDamage + randomBonus);
+}
+
+function calculateBossDamage(bossAttack, playerDefense) {
+  const baseDamage = Number(bossAttack || 0) - Number(playerDefense || 0);
+  const randomBonus = Math.floor(Math.random() * 20) + 10;
+
+  return Math.max(1, baseDamage + randomBonus);
+}
+
+async function autoReviveRaidPlayer(playerRef, userId, maxHp) {
+  const reviveSeconds = 15;
+  const reviveAvailableAt = Date.now() + reviveSeconds * 1000;
+
+  await playerRef.update({
+    hp: 0,
+    raidReviveAvailableAt: reviveAvailableAt,
+  });
+
+  setTimeout(async () => {
+    try {
+      const latestDoc = await playerRef.get();
+
+      if (!latestDoc.exists) return;
+
+      const latestPlayer = latestDoc.data();
+
+      if (
+        Number(latestPlayer.hp || 0) <= 0 &&
+        Number(latestPlayer.raidReviveAvailableAt || 0) === reviveAvailableAt
+      ) {
+        const revivedHp = Math.floor(Number(maxHp || 100) * 0.5);
+
+        await playerRef.update({
+          hp: revivedHp,
+          raidReviveAvailableAt: null,
+        });
+
+        console.log(
+          `${latestPlayer.username || userId} auto revived from raid.`
+        );
+      }
+    } catch (error) {
+      console.error("Raid auto revive error:", error);
+    }
+  }, reviveSeconds * 1000);
+
+  return reviveSeconds;
 }
 
 async function getPlayerParty(userId) {
@@ -181,7 +230,9 @@ async function distributeRewards(worldId, boss, ranking) {
         `💥 Damage: ${entry.damage}\n` +
         `🪙 Gold: ${goldReward}\n` +
         `⭐ EXP: ${expReward}\n` +
-        `🎁 Drop: ${droppedItem ? "\n" + formatDroppedItem(droppedItem) : "No item"}\n` +
+        `🎁 Drop: ${
+          droppedItem ? "\n" + formatDroppedItem(droppedItem) : "No item"
+        }\n` +
         `📉 Reward: ${penalty.label}${hasPartyBonus ? " + Party Bonus" : ""}`
     );
   }
@@ -252,13 +303,16 @@ module.exports = async function raidCommand(message, args = []) {
   }
 
   if (Number(player.hp || 0) <= 0) {
-    return message.reply("💀 You are defeated. Revive first before attacking the boss.");
+    return message.reply(
+      "💀 You are defeated. Wait for raid revive or use `!s rest` before attacking again."
+    );
   }
 
   const damage = calculateDamage(player.attack, boss.defense);
   const newBossHp = Math.max(0, Number(boss.hp || 0) - damage);
 
   const party = await getPlayerParty(userId);
+  const threatGain = calculateThreatGain(player, damage);
 
   await saveDamage(
     worldId,
@@ -267,7 +321,8 @@ module.exports = async function raidCommand(message, args = []) {
       username: player.username || message.author.username,
     },
     damage,
-    party?.id || null
+    party?.id || null,
+    threatGain
   );
 
   await db.collection("worldBosses").doc(worldId).update({
@@ -275,9 +330,68 @@ module.exports = async function raidCommand(message, args = []) {
   });
 
   if (newBossHp > 0) {
+    let bossAttackText = "";
+
+    const target = await pickBossTarget(worldId);
+
+    if (target) {
+      const targetRef = db.collection("players").doc(target.userId);
+      const targetDoc = await targetRef.get();
+
+      if (targetDoc.exists) {
+        const targetPlayer = targetDoc.data();
+
+        const targetHp = Number(targetPlayer.hp || 0);
+        const targetMaxHp = Number(targetPlayer.maxHp || 100);
+        const targetDefense = Number(targetPlayer.defense || 0);
+        const targetDodge = Number(targetPlayer.dodge || 0);
+
+        if (targetHp > 0) {
+          const dodged = rollChance(targetDodge);
+
+          if (dodged) {
+            bossAttackText =
+              `\n\n💨 **${targetPlayer.username}** dodged **${boss.bossName}'s** attack!`;
+          } else {
+            const bossDamage = calculateBossDamage(
+              boss.attack,
+              targetDefense
+            );
+
+            const newTargetHp = Math.max(0, targetHp - bossDamage);
+
+            if (newTargetHp <= 0) {
+              const reviveSeconds = await autoReviveRaidPlayer(
+                targetRef,
+                target.userId,
+                targetMaxHp
+              );
+
+              bossAttackText =
+                `\n\n👹 **${boss.bossName}** targeted **${targetPlayer.username}**!\n` +
+                `💥 Boss Damage: **${bossDamage}**\n` +
+                `💀 **${targetPlayer.username}** was defeated!\n` +
+                `⏳ Auto revive in **${reviveSeconds}s** with 50% HP.`;
+            } else {
+              await targetRef.update({
+                hp: newTargetHp,
+              });
+
+              bossAttackText =
+                `\n\n👹 **${boss.bossName}** targeted **${targetPlayer.username}**!\n` +
+                `💥 Boss Damage: **${bossDamage}**\n` +
+                `❤️ ${targetPlayer.username} HP: **${newTargetHp}/${targetMaxHp}**`;
+            }
+          }
+        }
+      }
+    }
+
     return message.reply(
-      `⚔️ You hit **${boss.bossName}** for **${damage}** damage!\n\n` +
-        `❤️ Boss HP: **${newBossHp}/${boss.maxHp}**`
+      `⚔️ You hit **${boss.bossName}** for **${damage}** damage!\n` +
+        `🔥 Threat Gained: **${threatGain}**\n\n` +
+        `❤️ Boss HP: **${newBossHp}/${boss.maxHp}**` +
+        bossAttackText
     );
   }
 

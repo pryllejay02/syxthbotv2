@@ -19,6 +19,8 @@ const sellCommand = require("../commands/sell");
 const leaderboardCommand = require("../commands/leaderboard");
 const partyCommand = require("../commands/party");
 const raidCommand = require("../commands/raid");
+const tradeCommand = require("../commands/trade");
+const flexCommand = require("../commands/flex");
 
 module.exports = async function commandHandler(client, message, prefix) {
   try {
@@ -50,6 +52,8 @@ module.exports = async function commandHandler(client, message, prefix) {
       "announce",
       "party",
       "raid",
+      "trade",
+      "flex",
     ];
 
     if (!publicCommands.includes(command)) {
@@ -101,6 +105,8 @@ module.exports = async function commandHandler(client, message, prefix) {
       lb: () => leaderboardCommand(message),
       party: () => partyCommand(message, args),
       raid: () => raidCommand(message, args),
+      trade: () => tradeCommand(message, args),
+      flex: () => flexCommand(message, args),
     };
 
     if (commands[command]) {

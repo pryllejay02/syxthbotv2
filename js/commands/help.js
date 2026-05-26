@@ -39,6 +39,18 @@ module.exports = async function helpCommand(message, prefix) {
 \`${prefix}raid status\`
 \`${prefix}raid hit\`
 
+🤝 **Trading**
+\`${prefix}flex <item_id>\` - Show item in trading area
+\`${prefix}trade @player\` - Send trade invite
+\`${prefix}trade accept\`
+\`${prefix}trade decline\`
+\`${prefix}trade add <item_id> <qty>\`
+\`${prefix}trade remove <item_id>\`
+\`${prefix}trade gold <amount>\`
+\`${prefix}trade confirm\`
+\`${prefix}trade cancel\`
+\`${prefix}trade status\`
+
 🏆 **Leaderboard**
 \`${prefix}leaderboard\` / \`${prefix}lb\`
 
@@ -47,6 +59,6 @@ module.exports = async function helpCommand(message, prefix) {
 🔵 Rare
 🟠 Legendary
 
-🔥 Explore • Hunt • Raid • Level Up
+🔥 Explore • Hunt • Raid • Trade • Level Up
 `);
 };

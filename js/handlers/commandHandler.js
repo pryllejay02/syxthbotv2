@@ -21,6 +21,7 @@ const partyCommand = require("../commands/party");
 const raidCommand = require("../commands/raid");
 const tradeCommand = require("../commands/trade");
 const flexCommand = require("../commands/flex");
+const adminCommand = require("../commands/admin");
 
 module.exports = async function commandHandler(client, message, prefix) {
   try {
@@ -54,6 +55,7 @@ module.exports = async function commandHandler(client, message, prefix) {
       "raid",
       "trade",
       "flex",
+      "admin",
     ];
 
     if (!publicCommands.includes(command)) {
@@ -107,6 +109,7 @@ module.exports = async function commandHandler(client, message, prefix) {
       raid: () => raidCommand(message, args),
       trade: () => tradeCommand(message, args),
       flex: () => flexCommand(message, args),
+      admin: () => adminCommand(message, args),
     };
 
     if (commands[command]) {

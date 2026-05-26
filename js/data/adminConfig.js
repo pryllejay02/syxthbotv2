@@ -1,4 +1,5 @@
 module.exports = {
+  CREATOR_ROLE_ID: "1507331440856272996",
   ADMIN_ROLE_ID: "1507331081668395021",
 
   // Only this channel can use admin commands

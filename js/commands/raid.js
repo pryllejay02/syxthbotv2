@@ -63,9 +63,7 @@ async function autoReviveRaidPlayer(playerRef, userId, maxHp) {
           raidReviveAvailableAt: null,
         });
 
-        console.log(
-          `${latestPlayer.username || userId} auto revived from raid.`
-        );
+        console.log(`${latestPlayer.username || userId} auto revived from raid.`);
       }
     } catch (error) {
       console.error("Raid auto revive error:", error);
@@ -205,6 +203,7 @@ async function distributeRewards(worldId, boss, ranking) {
     }
 
     const newGold = Number(player.gold || 0) + goldReward;
+
     const finalHp = levelResult.leveledUp
       ? totalStats.maxHp
       : Number(player.hp || totalStats.maxHp);
@@ -330,7 +329,11 @@ module.exports = async function raidCommand(message, args = []) {
   });
 
   if (newBossHp > 0) {
-    let bossAttackText = "";
+    await message.reply(
+      `⚔️ You hit **${boss.bossName}** for **${damage}** damage!\n` +
+        `🔥 Threat Gained: **${threatGain}**\n` +
+        `❤️ Boss HP: **${newBossHp}/${boss.maxHp}**`
+    );
 
     const target = await pickBossTarget(worldId);
 
@@ -350,8 +353,9 @@ module.exports = async function raidCommand(message, args = []) {
           const dodged = rollChance(targetDodge);
 
           if (dodged) {
-            bossAttackText =
-              `\n\n💨 **${targetPlayer.username}** dodged **${boss.bossName}'s** attack!`;
+            await message.channel.send(
+              `💨 **${targetPlayer.username || target.username}** dodged **${boss.bossName}'s** attack!`
+            );
           } else {
             const bossDamage = calculateBossDamage(
               boss.attack,
@@ -367,32 +371,29 @@ module.exports = async function raidCommand(message, args = []) {
                 targetMaxHp
               );
 
-              bossAttackText =
-                `\n\n👹 **${boss.bossName}** targeted **${targetPlayer.username}**!\n` +
-                `💥 Boss Damage: **${bossDamage}**\n` +
-                `💀 **${targetPlayer.username}** was defeated!\n` +
-                `⏳ Auto revive in **${reviveSeconds}s** with 50% HP.`;
+              await message.channel.send(
+                `👹 **${boss.bossName}** attacked **${targetPlayer.username || target.username}**!\n` +
+                  `💥 Damage: **${bossDamage}**\n` +
+                  `💀 **${targetPlayer.username || target.username}** was defeated!\n` +
+                  `⏳ Auto revive in **${reviveSeconds}s** with 50% HP.`
+              );
             } else {
               await targetRef.update({
                 hp: newTargetHp,
               });
 
-              bossAttackText =
-                `\n\n👹 **${boss.bossName}** targeted **${targetPlayer.username}**!\n` +
-                `💥 Boss Damage: **${bossDamage}**\n` +
-                `❤️ ${targetPlayer.username} HP: **${newTargetHp}/${targetMaxHp}**`;
+              await message.channel.send(
+                `👹 **${boss.bossName}** attacked **${targetPlayer.username || target.username}**!\n` +
+                  `💥 Damage: **${bossDamage}**\n` +
+                  `❤️ ${targetPlayer.username || target.username} HP: **${newTargetHp}/${targetMaxHp}**`
+              );
             }
           }
         }
       }
     }
 
-    return message.reply(
-      `⚔️ You hit **${boss.bossName}** for **${damage}** damage!\n` +
-        `🔥 Threat Gained: **${threatGain}**\n\n` +
-        `❤️ Boss HP: **${newBossHp}/${boss.maxHp}**` +
-        bossAttackText
-    );
+    return;
   }
 
   await db.collection("worldBosses").doc(worldId).update({

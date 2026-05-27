@@ -19,16 +19,11 @@ function calculatePower(player) {
 
 function calculateOverall(player) {
   const power = calculatePower(player);
-
   const level = Number(player.level || 1);
-  const gold = Number(player.gold || 0);
-  const kills = Number(player.monsterKills || 0);
 
   return Math.floor(
     power +
-    (level * 100) +
-    (gold * 0.05) +
-    (kills * 10)
+    (level * 100)
   );
 }
 
@@ -76,8 +71,8 @@ module.exports = async function leaderboardCommand(message) {
         `⭐ Score: ${player.score}\n` +
         `⚔️ Power: ${player.power}\n` +
         `📈 Lv.${player.level || 1}\n` +
-        `🪙 ${player.gold || 0} Gold\n` +
-        `👹 ${player.monsterKills || 0} Kills`
+        `❤️ HP: ${player.maxHp || 0}\n` +
+        `🛡️ DEF: ${player.defense || 0}`
       );
 
     })
@@ -88,10 +83,7 @@ module.exports = async function leaderboardCommand(message) {
     .setTitle("🏆 SYXTH OVERALL LEADERBOARD")
     .setDescription(
       `Top adventurers across all worlds\n\n` +
-      `${leaderboardText}\n\n` +
-      `━━━━━━━━━━━━━━━━━━\n` +
-      `Score Formula:\n` +
-      `⚔️ Power + ⭐ Level + 🪙 Gold + 👹 Kills`
+      leaderboardText
     )
     .setFooter({
       text: "Syxth MMORPG Rankings"

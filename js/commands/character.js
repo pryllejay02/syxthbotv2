@@ -28,26 +28,28 @@ module.exports = async function characterCommand(message) {
   const dodge = Number(player.dodge ?? 0);
   const crit = Number(player.crit ?? 0);
 
-  function showEquipment(item, emptyText) {
-    if (!item) return `Empty ${emptyText}`;
+function showEquipment(item, emptyText) {
+  if (!item) return `Empty ${emptyText}`;
 
-    const qualityEmoji =
-      item.quality === "Starter"
-        ? "🌱"
-        : getQualityEmoji(item.quality);
+  const qualityEmoji =
+    item.quality === "Starter"
+      ? "🌱"
+      : getQualityEmoji(item.quality);
 
-    const stats = item.stats || {};
+  const stats = item.stats || {};
 
-    return (
-      `${item.emoji || "📦"} ${item.name}\n` +
-      `└ ${qualityEmoji} ${item.quality || "Common"} | ` +
-      `⚔️${stats.attack || 0} ` +
-      `🛡️${stats.defense || 0} ` +
-      `❤️${stats.maxHp || 0} ` +
-      `💨${stats.dodge || 0}% ` +
-      `💥${stats.crit || 0}%`
-    );
-  }
+  return (
+    `${item.emoji || "📦"} ${item.name}\n` +
+    `└ ${qualityEmoji} ${item.quality || "Common"} | ` +
+    `Lv.${item.requiredLevel || 1}\n` +
+
+    `└ ⚔️${stats.attack || 0} ` +
+    `🛡️${stats.defense || 0} ` +
+    `❤️${stats.maxHp || 0} ` +
+    `💨${stats.dodge || 0}% ` +
+    `💥${stats.crit || 0}%`
+  );
+}
 
   const embed = new EmbedBuilder()
     .setColor("#8B0000")

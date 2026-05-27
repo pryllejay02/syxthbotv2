@@ -1,3 +1,5 @@
+const path = require("path");
+
 module.exports = {
   spawnSchedule: [
     {
@@ -19,6 +21,12 @@ module.exports = {
       {
         id: "goblin_king",
         name: "Goblin King",
+
+        image: path.join(
+          __dirname,
+          "../../img/boss_img/Goblin_King.png"
+        ),
+
         level: 10,
 
         hp: 10000,
@@ -39,6 +47,12 @@ module.exports = {
       {
         id: "slime_emperor",
         name: "Slime Emperor",
+
+        image: path.join(
+          __dirname,
+          "../../img/boss_img/Slime_Emperor.png"
+        ),
+
         level: 15,
 
         hp: 15000,
@@ -61,6 +75,12 @@ module.exports = {
       {
         id: "orc_commander",
         name: "Orc Commander",
+
+        image: path.join(
+          __dirname,
+          "../../img/boss_img/Orc_Commander.png"
+        ),
+
         level: 35,
 
         hp: 50000,
@@ -83,6 +103,12 @@ module.exports = {
       {
         id: "chaos_titan",
         name: "Chaos Titan",
+
+        image: path.join(
+          __dirname,
+          "../../img/boss_img/Chaos_Titan.png"
+        ),
+
         level: 80,
 
         hp: 300000,

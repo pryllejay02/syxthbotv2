@@ -1,6 +1,13 @@
 const { db } = require("../../firebase/firebase");
+
+const {
+  EmbedBuilder,
+  AttachmentBuilder,
+} = require("discord.js");
+
 const bossConfig = require("../data/bossConfig");
 const partyConfig = require("../data/partyConfig");
+
 
 function getRandomBossByTier(tier) {
   const bosses = bossConfig.bosses[tier] || [];
@@ -81,19 +88,64 @@ if (existingBoss && existingBoss.status === "active") {
     .catch(() => null);
 
   if (channel) {
-    await channel.send(
-      `👹 **WORLD BOSS HAS SPAWNED!**\n\n` +
-        `**${boss.name}** has appeared!\n\n` +
-        `🌍 World: **${worldId}**\n` +
-        `⭐ Level: **Lv.${boss.level}**\n` +
-        `📌 Recommended Level: **Lv.${boss.recommendedLevel.min}-${boss.recommendedLevel.max}**\n` +
-        `❤️ HP: **${boss.hp}/${boss.hp}**\n` +
-        `⚔️ Attack: **${boss.attack}**\n` +
-        `🛡️ Defense: **${boss.defense}**\n\n` +
-        `Use \`!s raid hit\` to attack!\n` +
-        `Use \`!s raid status\` to view boss status.`
+
+  const bossImage =
+    boss.image
+      ? new AttachmentBuilder(
+          boss.image
+        )
+      : null;
+
+  const embed =
+    new EmbedBuilder()
+
+      .setColor("#8B0000")
+
+      .setTitle(
+        `👹 ${boss.name} Appeared!`
+      )
+
+      .setDescription(
+
+`🌍 World: **${worldId}**
+
+⭐ Level: **Lv.${boss.level}**
+📌 Recommended: **Lv.${boss.recommendedLevel.min}-${boss.recommendedLevel.max}**
+
+❤️ HP: **${boss.hp}/${boss.hp}**
+⚔️ Attack: **${boss.attack}**
+🛡️ Defense: **${boss.defense}**
+
+⚠️ RAID BOSS ACTIVE
+
+Use \`!s raid hit\`
+Use \`!s raid status\``
+
+      )
+
+      .setFooter({
+        text: "Syxth Boss Raid"
+      });
+
+  if (bossImage) {
+
+    embed.setImage(
+      `attachment://${bossImage.name}`
     );
+
+    await channel.send({
+      embeds: [embed],
+      files: [bossImage],
+    });
+
+  } else {
+
+    await channel.send({
+      embeds: [embed],
+    });
+
   }
+}
 
   return bossData;
 }

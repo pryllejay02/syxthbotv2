@@ -130,8 +130,13 @@ module.exports = async function autoplay(
         const player=
         playerDoc.data();
 
-        const hasMonster=
-        player.currentMonster;
+        const hasMonster =
+        player.currentMonster ||
+        player.currentBattle ||
+        player.battle ||
+        player.monster ||
+        player.enemy ||
+        player.inBattle === true;
 
         if(
           !hasMonster

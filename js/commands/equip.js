@@ -94,14 +94,22 @@ module.exports = async function equipCommand(message, args = []) {
     );
 
     if (existingOldItemIndex !== -1) {
-      inventory[existingOldItemIndex].quantity =
-        Number(inventory[existingOldItemIndex].quantity || 0) + 1;
-    } else {
-      inventory.push({
-        ...oldEquippedItem,
-        quantity: 1,
-      });
-    }
+  inventory[existingOldItemIndex].equipped = false;
+  inventory[existingOldItemIndex].isEquipped = false;
+
+  inventory[existingOldItemIndex].quantity =
+    Number(
+      inventory[existingOldItemIndex].quantity || 0
+    ) + 1;
+
+} else {
+  inventory.push({
+    ...oldEquippedItem,
+    equipped: false,
+    isEquipped: false,
+    quantity: 1,
+  });
+}
   }
 
   if (Number(inventory[itemIndex].quantity || 1) > 1) {
@@ -120,22 +128,26 @@ module.exports = async function equipCommand(message, args = []) {
   };
 
   equipment[slot] = {
-    id: item.id,
-    name: item.name,
-    type: item.type,
-    quality: item.quality || "Common",
-    qualityEmoji,
-    requiredLevel: item.requiredLevel || 1,
-    compatibleClasses: item.compatibleClasses || ["all"],
-    stats: item.stats || {
-      attack: 0,
-      defense: 0,
-      maxHp: 0,
-      dodge: 0,
-      crit: 0,
-    },
-    emoji: item.emoji || "📦",
-  };
+  id: item.id,
+  baseItemId: item.baseItemId || item.id,
+  name: item.name,
+  type: item.type,
+  quality: item.quality || "Common",
+  qualityEmoji,
+  requiredLevel: item.requiredLevel || 1,
+  compatibleClasses: item.compatibleClasses || ["all"],
+  stats: item.stats || {
+    attack: 0,
+    defense: 0,
+    maxHp: 0,
+    dodge: 0,
+    crit: 0,
+  },
+  price: Number(item.price || 0),
+  description: item.description || "",
+  source: item.source || "unknown",
+  emoji: item.emoji || "📦",
+};
 
   const totalStats = calculateTotalStats(baseStats, equipment);
 

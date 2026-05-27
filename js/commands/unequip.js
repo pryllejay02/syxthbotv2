@@ -71,9 +71,11 @@ module.exports = async function unequipCommand(message, args = []) {
       Number(inventory[existingItemIndex].quantity || 0) + 1;
   } else {
     inventory.push({
-      ...item,
-      quantity: 1,
-    });
+  ...item,
+  equipped: false,
+  isEquipped: false,
+  quantity: 1,
+});
   }
 
   const baseStats = player.baseStats || {

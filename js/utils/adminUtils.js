@@ -4,16 +4,18 @@ const {
   ADMIN_CHANNEL_ID,
 } = require("../data/adminConfig");
 
-function isAdmin(member) {
-  return (
-    member.roles.cache.has(CREATOR_ROLE_ID) ||
-    member.roles.cache.has(ADMIN_ROLE_ID)
-  );
-}
-
 function isCreator(member) {
   return member.roles.cache.has(
     CREATOR_ROLE_ID
+  );
+}
+
+function isAdmin(member) {
+  return (
+    isCreator(member) ||
+    member.roles.cache.has(
+      ADMIN_ROLE_ID
+    )
   );
 }
 
@@ -22,7 +24,7 @@ function isAdminChannel(channelId) {
 }
 
 module.exports = {
-  isAdmin,
   isCreator,
+  isAdmin,
   isAdminChannel,
 };

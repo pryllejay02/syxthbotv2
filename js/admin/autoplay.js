@@ -84,7 +84,7 @@ module.exports = async function autoplay(message, args = []) {
         await huntCommand(message);
 
         await new Promise((resolve) =>
-          setTimeout(resolve, 1500)
+          setTimeout(resolve, 500)
         );
       }
 
@@ -101,7 +101,7 @@ module.exports = async function autoplay(message, args = []) {
     } finally {
       state.running = false;
     }
-  }, 7000);
+  }, 2500);
 
   autoPlayers.set(userId, {
     interval,

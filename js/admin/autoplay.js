@@ -6,182 +6,104 @@ const { db } = require("../../firebase/firebase");
 
 const autoPlayers = new Map();
 
-module.exports = async function autoplay(
-  message,
-  args=[]
-){
-
+module.exports = async function autoplay(message, args = []) {
   if (!isCreator(message.member)) {
+    return message.reply("❌ Creator only.");
+  }
+
+  const action = String(args[0] || "").toLowerCase();
+  const userId = message.author.id;
+
+  if (!["on", "off", "status"].includes(action)) {
     return message.reply(
-      "❌ Creator only."
+      `❌ Usage:\n\n` +
+        `!s creator on\n` +
+        `!s creator off\n` +
+        `!s creator status`
     );
   }
 
-  const action =
-  String(
-    args[0]||""
-  ).toLowerCase();
-
-  const userId =
-  message.author.id;
-
-  if(
-    ![
-      "on",
-      "off",
-      "status"
-    ].includes(action)
-  ){
-
-    return message.reply(
-`❌ Usage:
-
-!s creator on
-!s creator off
-!s creator status`
-    );
-  }
-
-  if(action==="status"){
-
+  if (action === "status") {
     return message.reply(
       autoPlayers.has(userId)
-      ?
-      "✅ Auto Hunt: ON"
-      :
-      "❌ Auto Hunt: OFF"
+        ? "✅ Auto Hunt: ON"
+        : "❌ Auto Hunt: OFF"
     );
   }
 
-  if(action==="off"){
+  if (action === "off") {
+    const timer = autoPlayers.get(userId);
 
-    const timer =
-    autoPlayers.get(
-      userId
-    );
-
-    if(timer){
-
-      clearInterval(
-        timer.interval
-      );
-
-      autoPlayers.delete(
-        userId
-      );
+    if (timer) {
+      clearInterval(timer.interval);
+      autoPlayers.delete(userId);
     }
 
-    return message.reply(
-      "🛑 Auto Hunt OFF"
-    );
+    return message.reply("🛑 Auto Hunt OFF");
   }
 
-  if(
-    autoPlayers.has(
-      userId
-    )
-  ){
-
-    return message.reply(
-      "⚠️ Already active."
-    );
+  if (autoPlayers.has(userId)) {
+    return message.reply("⚠️ Already active.");
   }
 
-  await message.reply(
-    "🤖 Auto Hunt ON"
-  );
+  await message.reply("🤖 Auto Hunt ON");
 
-  const state={
-    running:false
+  const state = {
+    running: false,
   };
 
-  const interval=
-  setInterval(
-    async()=>{
+  const interval = setInterval(async () => {
+    if (state.running) return;
 
-      if(
-        state.running
-      ) return;
+    state.running = true;
 
-      state.running=true;
-
-      try{
-
-        const playerDoc=
-        await db
+    try {
+      const playerDoc = await db
         .collection("players")
         .doc(userId)
         .get();
 
-        if(
-          !playerDoc.exists
-        ){
-          clearInterval(
-            interval
-          );
+      if (!playerDoc.exists) {
+        clearInterval(interval);
+        autoPlayers.delete(userId);
+        return;
+      }
 
-          autoPlayers.delete(
-            userId
-          );
+      const player = playerDoc.data();
 
-          return;
-        }
+      if (Number(player.hp || 0) <= 0) {
+        return;
+      }
 
-        const player=
-        playerDoc.data();
+      const battleDoc = await db
+        .collection("battles")
+        .doc(userId)
+        .get();
 
-        const hasMonster =
-        player.currentMonster ||
-        player.currentBattle ||
-        player.battle ||
-        player.monster ||
-        player.enemy ||
-        player.inBattle === true;
+      if (!battleDoc.exists) {
+        await huntCommand(message);
 
-        if(
-          !hasMonster
-        ){
-
-          await huntCommand(
-            message
-          );
-
-          await new Promise(
-            resolve=>
-            setTimeout(
-              resolve,
-              1500
-            )
-          );
-        }
-
-        await hitCommand(
-          message
+        await new Promise((resolve) =>
+          setTimeout(resolve, 1500)
         );
-
-      }
-      catch(error){
-
-        console.error(
-          "AUTO ERROR:",
-          error
-        );
-
-      }
-      finally{
-
-        state.running=false;
-
       }
 
-    },
-    7000
-  );
+      const latestBattleDoc = await db
+        .collection("battles")
+        .doc(userId)
+        .get();
 
-  autoPlayers.set(
-    userId,
-    {
-      interval
+      if (latestBattleDoc.exists) {
+        await hitCommand(message);
+      }
+    } catch (error) {
+      console.error("AUTO ERROR:", error);
+    } finally {
+      state.running = false;
     }
-  );
+  }, 7000);
+
+  autoPlayers.set(userId, {
+    interval,
+  });
 };

@@ -1,92 +1,103 @@
 module.exports = async function helpCommand(message, prefix) {
-  return message.reply(`
-⚔️ **SYXTH MMORPG COMMANDS**
+  const p = `${prefix} `;
 
-🧙 **Character**
-\`${prefix}start\` - Create your character
-\`${prefix}profile\` - View your full profile, power, stats, kills, and revive status
-\`${prefix}character\` / \`${prefix}char\` - View equipped gear
+  const page1 =
+    `⚔️ **SYXTH MMORPG COMMANDS**\n\n` +
+    `🧙 **Character**\n` +
+    `\`${p}start\` - Create your character\n` +
+    `\`${p}profile\` - View your full profile, power, stats, kills, and revive status\n` +
+    `\`${p}character\` / \`${p}char\` - View equipped gear\n\n` +
 
-⚔️ **Battle**
-\`${prefix}hunt\` - Find a monster
-\`${prefix}hit\` - Attack the monster
-\`${prefix}retreat\` - Escape from battle
-\`${prefix}rest\` - Heal or revive
+    `⚔️ **Battle**\n` +
+    `\`${p}hunt\` - Find a monster\n` +
+    `\`${p}hit\` - Attack the monster\n` +
+    `\`${p}retreat\` - Escape from battle\n` +
+    `\`${p}rest\` - Heal or revive\n\n` +
 
-🎒 **Inventory**
-\`${prefix}inventory\` / \`${prefix}inv\` - View all items
-\`${prefix}inventory equipment\` - View equipment only
-\`${prefix}inventory consumable\` - View consumables only
-\`${prefix}inventory common\` - View Common items
-\`${prefix}inventory rare\` - View Rare items
-\`${prefix}inventory legendary\` - View Legendary items
-\`${prefix}use <item_id>\` - Use a consumable item
-\`${prefix}sell <item_id> <qty>\` - Sell specific item quantity
-\`${prefix}sell <item_id> all\` - Sell all quantity of one item
-\`${prefix}sell all\` - Sell all sellable items
-\`${prefix}sell all common\` - Sell all Common items
-\`${prefix}sell all rare\` - Sell all Rare items
-\`${prefix}sell all legendary\` - Sell all Legendary items
+    `🎒 **Inventory**\n` +
+    `\`${p}inventory\` / \`${p}inv\` - View all items\n` +
+    `\`${p}inventory equipment\` - View equipment only\n` +
+    `\`${p}inventory consumable\` - View consumables only\n` +
+    `\`${p}inventory common\` - View Common items\n` +
+    `\`${p}inventory rare\` - View Rare items\n` +
+    `\`${p}inventory legendary\` - View Legendary items\n` +
+    `\`${p}use <item_id>\` - Use a consumable item\n\n` +
 
-🏪 **Shop**
-\`${prefix}shop\` - View shop for your nearest available level
-\`${prefix}shop <level>\` - View shop by level
-\`${prefix}shop <level> weapon\` - View weapons by level
-\`${prefix}shop <level> equipment\` - View equipment by level
-\`${prefix}shop <level> armor\` - View armor by level
-\`${prefix}shop consumable\` - View consumables
-\`${prefix}buy <item_id> <qty>\` - Buy an item
+    `💰 **Selling**\n` +
+    `\`${p}sell <item_id> <qty>\` - Sell specific item quantity\n` +
+    `\`${p}sell <item_id> all\` - Sell all quantity of one item\n` +
+    `\`${p}sell all\` - Sell all sellable items\n` +
+    `\`${p}sell all common\` - Sell all Common items\n` +
+    `\`${p}sell all rare\` - Sell all Rare items\n` +
+    `\`${p}sell all legendary\` - Sell all Legendary items`;
 
-🛡️ **Equipment**
-\`${prefix}equip <item_id>\` - Equip an item
-\`${prefix}unequip <slot>\` - Unequip an item
-Slots: \`weapon\`, \`helmet\`, \`armor\`, \`gloves\`, \`pants\`, \`boots\`
+  const page2 =
+    `🏪 **Shop**\n` +
+    `\`${p}shop\` - View shop for your nearest available level\n` +
+    `\`${p}shop <level>\` - View shop by level\n` +
+    `\`${p}shop <level> weapon\` - View weapons by level\n` +
+    `\`${p}shop <level> equipment\` - View equipment by level\n` +
+    `\`${p}shop <level> armor\` - View armor by level\n` +
+    `\`${p}shop consumable\` - View consumables\n` +
+    `\`${p}buy <item_id> <qty>\` - Buy an item\n` +
+    `📌 Max buy quantity: **99** per command\n\n` +
 
-👥 **Party**
-\`${prefix}party create @player\` - Create party and invite player
-\`${prefix}party invite @player\` - Invite another player
-\`${prefix}party accept\` - Accept party invitation
-\`${prefix}party status\` - View party status
-\`${prefix}party leave\` - Leave party
-\`${prefix}party disband\` - Disband party as leader
+    `🛡️ **Equipment**\n` +
+    `\`${p}equip <item_id>\` - Equip an item\n` +
+    `\`${p}unequip <slot>\` - Unequip an item\n` +
+    `Slots: \`weapon\`, \`helmet\`, \`armor\`, \`gloves\`, \`pants\`, \`boots\`\n\n` +
 
-👹 **Boss Raid**
-\`${prefix}raid status\` - View active world boss
-\`${prefix}raid hit\` - Attack world boss
+    `👥 **Party**\n` +
+    `\`${p}party create @player\` - Create party and invite player\n` +
+    `\`${p}party invite @player\` - Invite another player\n` +
+    `\`${p}party accept\` - Accept party invitation\n` +
+    `\`${p}party status\` - View party status\n` +
+    `\`${p}party leave\` - Leave party\n` +
+    `\`${p}party disband\` - Disband party as leader\n\n` +
 
-🤝 **Trading**
-\`${prefix}flex <item_id>\` - Show inventory item in trading area
-\`${prefix}flex weapon\` - Show equipped weapon in trading area
-\`${prefix}flex armor\` - Show equipped armor in trading area
-\`${prefix}flex helmet\` - Show equipped helmet in trading area
-\`${prefix}trade @player\` - Send trade invite
-\`${prefix}trade accept\` - Accept trade invite
-\`${prefix}trade decline\` - Decline trade invite
-\`${prefix}trade add <item_id> <qty>\` - Add item to trade
-\`${prefix}trade remove <item_id>\` - Remove item from trade
-\`${prefix}trade gold <amount>\` - Add gold offer
-\`${prefix}trade confirm\` - Confirm trade
-\`${prefix}trade cancel\` - Cancel trade
-\`${prefix}trade status\` - View trade window
+    `👹 **Boss Raid**\n` +
+    `\`${p}raid status\` - View active world boss\n` +
+    `\`${p}raid hit\` - Attack world boss`;
 
-🏆 **Leaderboard**
-\`${prefix}leaderboard\` / \`${prefix}lb\` - Overall ranking
-\`${prefix}leaderboard overall\` - Overall ranking
-\`${prefix}leaderboard power\` - Power ranking
-\`${prefix}leaderboard level\` - Level ranking
-\`${prefix}leaderboard kills\` - Monster kills ranking
-\`${prefix}leaderboard gold\` - Gold ranking
+  const page3 =
+    `🤝 **Trading**\n` +
+    `\`${p}flex <item_id>\` - Show inventory item in trading area\n` +
+    `\`${p}flex weapon\` - Show equipped weapon in trading area\n` +
+    `\`${p}flex armor\` - Show equipped armor in trading area\n` +
+    `\`${p}flex helmet\` - Show equipped helmet in trading area\n` +
+    `\`${p}trade @player\` - Send trade invite\n` +
+    `\`${p}trade accept\` - Accept trade invite\n` +
+    `\`${p}trade decline\` - Decline trade invite\n` +
+    `\`${p}trade add <item_id> <qty>\` - Add item to trade\n` +
+    `\`${p}trade remove <item_id>\` - Remove item from trade\n` +
+    `\`${p}trade gold <amount>\` - Add gold offer\n` +
+    `\`${p}trade confirm\` - Confirm trade\n` +
+    `\`${p}trade cancel\` - Cancel trade\n` +
+    `\`${p}trade status\` - View trade window\n\n` +
 
-🎁 **Loot Quality**
-🟢 Common
-🔵 Rare
-🟠 Legendary
+    `🏆 **Leaderboard**\n` +
+    `\`${p}leaderboard\` / \`${p}lb\` - Overall ranking\n` +
+    `\`${p}leaderboard overall\` - Overall ranking\n` +
+    `\`${p}leaderboard power\` - Power ranking\n` +
+    `\`${p}leaderboard level\` - Level ranking\n` +
+    `\`${p}leaderboard kills\` - Monster kills ranking\n` +
+    `\`${p}leaderboard gold\` - Gold ranking`;
 
-🤖 **Creator Only**
-\`${prefix}creator on\` - Turn Auto Hunt on
-\`${prefix}creator off\` - Turn Auto Hunt off
-\`${prefix}creator status\` - Check Auto Hunt status
+  const page4 =
+    `🎁 **Loot Quality**\n` +
+    `🟢 Common\n` +
+    `🔵 Rare\n` +
+    `🟠 Legendary\n\n` +
 
-🔥 Explore • Hunt • Raid • Trade • Level Up
-`);
+    `🤖 **Creator Only**\n` +
+    `\`${p}creator on\` - Turn Auto Hunt on\n` +
+    `\`${p}creator off\` - Turn Auto Hunt off\n` +
+    `\`${p}creator status\` - Check Auto Hunt status\n\n` +
+
+    `🔥 Explore • Hunt • Raid • Trade • Level Up`;
+
+  await message.reply(page1);
+  await message.channel.send(page2);
+  await message.channel.send(page3);
+  return message.channel.send(page4);
 };

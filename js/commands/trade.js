@@ -7,6 +7,7 @@ const {
   findActiveTrade,
   formatTradeWindow,
   isStarterItem,
+  findInventoryItem,
 } = require("../utils/tradeUtils");
 
 const {
@@ -15,15 +16,11 @@ const {
   getTradeSide,
 } = require("../services/tradeService");
 
-function findInventoryItem(inventory, itemId) {
-  return inventory.find(
-    (item) => item.id.toLowerCase() === itemId.toLowerCase()
-  );
-}
-
 function removeItemFromInventory(inventory, itemId, quantity) {
   const index = inventory.findIndex(
-    (item) => item.id.toLowerCase() === itemId.toLowerCase()
+    (item) =>
+      item.id &&
+      item.id.toLowerCase() === String(itemId).toLowerCase()
   );
 
   if (index === -1) return false;
@@ -42,9 +39,9 @@ function removeItemFromInventory(inventory, itemId, quantity) {
 function addItemToInventory(inventory, item) {
   const existingIndex = inventory.findIndex(
     (invItem) =>
-      invItem.baseItemId === item.baseItemId &&
+      (invItem.baseItemId || invItem.id) === (item.baseItemId || item.id) &&
       invItem.quality === item.quality &&
-      JSON.stringify(invItem.stats) === JSON.stringify(item.stats)
+      JSON.stringify(invItem.stats || {}) === JSON.stringify(item.stats || {})
   );
 
   if (existingIndex !== -1) {
@@ -52,7 +49,10 @@ function addItemToInventory(inventory, item) {
       Number(inventory[existingIndex].quantity || 1) +
       Number(item.quantity || 1);
   } else {
-    inventory.push(item);
+    inventory.push({
+      ...item,
+      quantity: Number(item.quantity || 1),
+    });
   }
 }
 
@@ -60,6 +60,8 @@ function hasEnoughInventory(inventory, tradeItems = []) {
   for (const tradeItem of tradeItems) {
     const invItem = inventory.find(
       (item) =>
+        item.id &&
+        tradeItem.id &&
         item.id.toLowerCase() === tradeItem.id.toLowerCase()
     );
 
@@ -81,22 +83,29 @@ function isItemEquipped(player, itemId) {
     (item) =>
       item &&
       item.id &&
-      item.id.toLowerCase() === itemId.toLowerCase()
+      item.id.toLowerCase() === String(itemId).toLowerCase()
   );
 }
 
 function hasEquippedTradeItem(player, tradeItems = []) {
-  return tradeItems.some((item) =>
-    isItemEquipped(player, item.id)
-  );
+  return tradeItems.some((item) => isItemEquipped(player, item.id));
 }
 
-async function resetTradeToActive(tradeRef) {
-  await tradeRef.update({
-    status: "active",
-    player1Confirmed: false,
-    player2Confirmed: false,
-  });
+function isValidQuantity(quantity) {
+  return Number.isInteger(quantity) && quantity > 0;
+}
+
+function getOfferQuantity(items = [], itemId) {
+  return items
+    .filter(
+      (item) =>
+        item.id &&
+        item.id.toLowerCase() === String(itemId).toLowerCase()
+    )
+    .reduce(
+      (total, item) => total + Number(item.quantity || 1),
+      0
+    );
 }
 
 async function completeTrade(message, trade) {
@@ -108,10 +117,10 @@ async function completeTrade(message, trade) {
     status: "active",
     player1Confirmed: false,
     player2Confirmed: false,
+    updatedAt: new Date(),
   };
 
   const result = await db.runTransaction(async (transaction) => {
-    // IMPORTANT: Firestore transactions must finish all reads before writes.
     const latestTradeDoc = await transaction.get(tradeRef);
     const player1Doc = await transaction.get(player1Ref);
     const player2Doc = await transaction.get(player2Ref);
@@ -161,7 +170,8 @@ async function completeTrade(message, trade) {
 
       return {
         ok: false,
-        message: "❌ One of the players no longer has a character. Confirmations reset.",
+        message:
+          "❌ One of the players no longer has a character. Confirmations reset.",
       };
     }
 
@@ -174,21 +184,26 @@ async function completeTrade(message, trade) {
     const p1Gold = Number(player1.gold || 0);
     const p2Gold = Number(player2.gold || 0);
 
-    if (p1Gold < Number(latestTrade.player1Gold || 0)) {
+    const player1GoldOffer = Number(latestTrade.player1Gold || 0);
+    const player2GoldOffer = Number(latestTrade.player2Gold || 0);
+
+    if (p1Gold < player1GoldOffer) {
       transaction.update(tradeRef, resetPayload);
 
       return {
         ok: false,
-        message: "❌ Player 1 does not have enough gold anymore. Confirmations reset.",
+        message:
+          "❌ Player 1 does not have enough gold anymore. Confirmations reset.",
       };
     }
 
-    if (p2Gold < Number(latestTrade.player2Gold || 0)) {
+    if (p2Gold < player2GoldOffer) {
       transaction.update(tradeRef, resetPayload);
 
       return {
         ok: false,
-        message: "❌ Player 2 does not have enough gold anymore. Confirmations reset.",
+        message:
+          "❌ Player 2 does not have enough gold anymore. Confirmations reset.",
       };
     }
 
@@ -197,7 +212,8 @@ async function completeTrade(message, trade) {
 
       return {
         ok: false,
-        message: "❌ Player 1 no longer has the required item(s). Confirmations reset.",
+        message:
+          "❌ Player 1 no longer has the required item(s). Confirmations reset.",
       };
     }
 
@@ -206,7 +222,8 @@ async function completeTrade(message, trade) {
 
       return {
         ok: false,
-        message: "❌ Player 2 no longer has the required item(s). Confirmations reset.",
+        message:
+          "❌ Player 2 no longer has the required item(s). Confirmations reset.",
       };
     }
 
@@ -215,7 +232,8 @@ async function completeTrade(message, trade) {
 
       return {
         ok: false,
-        message: "❌ Player 1 has a trade item equipped. Unequip it first. Confirmations reset.",
+        message:
+          "❌ Player 1 has a trade item equipped. Unequip it first. Confirmations reset.",
       };
     }
 
@@ -224,7 +242,8 @@ async function completeTrade(message, trade) {
 
       return {
         ok: false,
-        message: "❌ Player 2 has a trade item equipped. Unequip it first. Confirmations reset.",
+        message:
+          "❌ Player 2 has a trade item equipped. Unequip it first. Confirmations reset.",
       };
     }
 
@@ -240,18 +259,12 @@ async function completeTrade(message, trade) {
 
     transaction.update(player1Ref, {
       inventory: p1Inventory,
-      gold:
-        p1Gold -
-        Number(latestTrade.player1Gold || 0) +
-        Number(latestTrade.player2Gold || 0),
+      gold: p1Gold - player1GoldOffer + player2GoldOffer,
     });
 
     transaction.update(player2Ref, {
       inventory: p2Inventory,
-      gold:
-        p2Gold -
-        Number(latestTrade.player2Gold || 0) +
-        Number(latestTrade.player1Gold || 0),
+      gold: p2Gold - player2GoldOffer + player1GoldOffer,
     });
 
     transaction.delete(tradeRef);
@@ -267,12 +280,8 @@ async function completeTrade(message, trade) {
   }
 
   await message.channel.send(
-    `🎉 **TRADE COMPLETED!**
-
-` +
-      `<@${result.trade.player1Id}> and <@${result.trade.player2Id}> successfully traded.
-
-` +
+    `🎉 **TRADE COMPLETED!**\n\n` +
+      `<@${result.trade.player1Id}> and <@${result.trade.player2Id}> successfully traded.\n\n` +
       `This trade room will be deleted shortly.`
   );
 
@@ -332,6 +341,7 @@ module.exports = async function tradeCommand(message, args = []) {
       status: "pending",
       channelId: null,
       createdAt: new Date(),
+      updatedAt: new Date(),
       expiresAt,
     });
 
@@ -354,7 +364,7 @@ module.exports = async function tradeCommand(message, args = []) {
           .reply("⏳ Trade invitation expired. No private trade room was created.")
           .catch(() => null);
       }
-    }, tradeConfig.inviteExpireMs);
+    }, tradeConfig.inviteExpireMs).unref?.();
 
     return;
   }
@@ -372,6 +382,7 @@ module.exports = async function tradeCommand(message, args = []) {
 
     if (Date.now() > Number(activeTrade.expiresAt || 0)) {
       await db.collection("trades").doc(activeTrade.id).delete();
+
       return message.reply("⏳ This trade invitation already expired.");
     }
 
@@ -380,6 +391,7 @@ module.exports = async function tradeCommand(message, args = []) {
     await db.collection("trades").doc(activeTrade.id).update({
       status: "active",
       channelId: channel.id,
+      updatedAt: new Date(),
     });
 
     await channel.send(
@@ -441,69 +453,127 @@ module.exports = async function tradeCommand(message, args = []) {
       return message.reply("❌ Usage: `!s trade add <item_id> <qty>`");
     }
 
-    if (quantity <= 0) {
-      return message.reply("❌ Quantity must be greater than 0.");
+    if (!isValidQuantity(quantity)) {
+      return message.reply("❌ Quantity must be a whole number greater than 0.");
     }
 
-    const player = await getPlayer(userId);
-    const inventory = player.inventory || [];
+    const tradeRef = db.collection("trades").doc(activeTrade.id);
+    const playerRef = db.collection("players").doc(userId);
 
-    const item = findInventoryItem(inventory, itemId);
+    const result = await db.runTransaction(async (transaction) => {
+      const tradeDoc = await transaction.get(tradeRef);
+      const playerDoc = await transaction.get(playerRef);
 
-    if (!item) {
-      return message.reply("❌ You don’t have that item.");
-    }
+      if (!tradeDoc.exists) {
+        return {
+          ok: false,
+          message: "❌ This trade no longer exists.",
+        };
+      }
 
-    if (isStarterItem(item)) {
-      return message.reply("❌ Starter items cannot be traded.");
-    }
+      if (!playerDoc.exists) {
+        return {
+          ok: false,
+          message: "❌ You no longer have a character.",
+        };
+      }
 
-    if (hasEquippedTradeItem(player, [item])) {
-      return message.reply(
-        "❌ You cannot trade an equipped item. Unequip it first."
-      );
-    }
+      const latestTrade = {
+        id: tradeDoc.id,
+        ...tradeDoc.data(),
+      };
 
-    const ownedQty = Number(item.quantity || 1);
+      if (latestTrade.status !== "active") {
+        return {
+          ok: false,
+          message: "❌ This trade is no longer active.",
+        };
+      }
 
-    if (ownedQty < quantity) {
-      return message.reply(`❌ You only have **${ownedQty}x** of this item.`);
-    }
+      const latestSide = getTradeSide(latestTrade, userId);
 
-    const currentItems = activeTrade[side.itemsKey] || [];
+      if (!latestSide) {
+        return {
+          ok: false,
+          message: "❌ You are not part of this trade.",
+        };
+      }
 
-    const alreadyAddedQty = currentItems
-      .filter((tradeItem) => tradeItem.id === item.id)
-      .reduce(
-        (total, tradeItem) => total + Number(tradeItem.quantity || 1),
-        0
-      );
+      const player = playerDoc.data();
+      const inventory = player.inventory || [];
 
-    if (alreadyAddedQty + quantity > ownedQty) {
-      return message.reply(
-        "❌ You already added too much of this item to the trade."
-      );
-    }
+      const item = findInventoryItem(player, itemId);
 
-    currentItems.push({
-      ...item,
-      quantity,
+      if (!item) {
+        return {
+          ok: false,
+          message: "❌ You don’t have that item.",
+        };
+      }
+
+      if (isStarterItem(item)) {
+        return {
+          ok: false,
+          message: "❌ Starter items cannot be traded.",
+        };
+      }
+
+      if (isItemEquipped(player, item.id)) {
+        return {
+          ok: false,
+          message: "❌ You cannot trade an equipped item. Unequip it first.",
+        };
+      }
+
+      const ownedQty = Number(item.quantity || 1);
+      const currentItems = latestTrade[latestSide.itemsKey] || [];
+      const alreadyAddedQty = getOfferQuantity(currentItems, item.id);
+
+      if (alreadyAddedQty + quantity > ownedQty) {
+        return {
+          ok: false,
+          message:
+            `❌ You only have **${ownedQty}x** of this item, and **${alreadyAddedQty}x** is already in the trade.`,
+        };
+      }
+
+      const updatedItems = [
+        ...currentItems,
+        {
+          ...item,
+          quantity,
+        },
+      ];
+
+      const updatedTrade = {
+        ...latestTrade,
+        [latestSide.itemsKey]: updatedItems,
+        player1Confirmed: false,
+        player2Confirmed: false,
+      };
+
+      transaction.update(tradeRef, {
+        [latestSide.itemsKey]: updatedItems,
+        player1Confirmed: false,
+        player2Confirmed: false,
+        updatedAt: new Date(),
+      });
+
+      return {
+        ok: true,
+        item,
+        quantity,
+        trade: updatedTrade,
+      };
     });
 
-    await db.collection("trades").doc(activeTrade.id).update({
-      [side.itemsKey]: currentItems,
-      player1Confirmed: false,
-      player2Confirmed: false,
-    });
+    if (!result.ok) {
+      return message.reply(result.message || "❌ Failed to add item.");
+    }
 
     return message.reply(
-      `✅ Added **${item.name} x${quantity}** to the trade.\n\n` +
-        formatTradeWindow({
-          ...activeTrade,
-          [side.itemsKey]: currentItems,
-          player1Confirmed: false,
-          player2Confirmed: false,
-        })
+      `✅ Added **${result.item.name} x${result.quantity}** to the trade.\n\n` +
+        formatTradeWindow(result.trade)
     );
   }
 
@@ -514,61 +584,171 @@ module.exports = async function tradeCommand(message, args = []) {
       return message.reply("❌ Usage: `!s trade remove <item_id>`");
     }
 
-    const currentItems = activeTrade[side.itemsKey] || [];
+    const tradeRef = db.collection("trades").doc(activeTrade.id);
 
-    const updatedItems = currentItems.filter(
-      (item) => item.id.toLowerCase() !== itemId.toLowerCase()
-    );
+    const result = await db.runTransaction(async (transaction) => {
+      const tradeDoc = await transaction.get(tradeRef);
 
-    if (updatedItems.length === currentItems.length) {
-      return message.reply("❌ That item is not in your trade offer.");
-    }
+      if (!tradeDoc.exists) {
+        return {
+          ok: false,
+          message: "❌ This trade no longer exists.",
+        };
+      }
 
-    await db.collection("trades").doc(activeTrade.id).update({
-      [side.itemsKey]: updatedItems,
-      player1Confirmed: false,
-      player2Confirmed: false,
+      const latestTrade = {
+        id: tradeDoc.id,
+        ...tradeDoc.data(),
+      };
+
+      if (latestTrade.status !== "active") {
+        return {
+          ok: false,
+          message: "❌ This trade is no longer active.",
+        };
+      }
+
+      const latestSide = getTradeSide(latestTrade, userId);
+
+      if (!latestSide) {
+        return {
+          ok: false,
+          message: "❌ You are not part of this trade.",
+        };
+      }
+
+      const currentItems = latestTrade[latestSide.itemsKey] || [];
+
+      const updatedItems = currentItems.filter(
+        (item) =>
+          item.id &&
+          item.id.toLowerCase() !== String(itemId).toLowerCase()
+      );
+
+      if (updatedItems.length === currentItems.length) {
+        return {
+          ok: false,
+          message: "❌ That item is not in your trade offer.",
+        };
+      }
+
+      const updatedTrade = {
+        ...latestTrade,
+        [latestSide.itemsKey]: updatedItems,
+        player1Confirmed: false,
+        player2Confirmed: false,
+      };
+
+      transaction.update(tradeRef, {
+        [latestSide.itemsKey]: updatedItems,
+        player1Confirmed: false,
+        player2Confirmed: false,
+        updatedAt: new Date(),
+      });
+
+      return {
+        ok: true,
+        trade: updatedTrade,
+      };
     });
+
+    if (!result.ok) {
+      return message.reply(result.message || "❌ Failed to remove item.");
+    }
 
     return message.reply(
       `✅ Removed item from trade.\n\n` +
-        formatTradeWindow({
-          ...activeTrade,
-          [side.itemsKey]: updatedItems,
-          player1Confirmed: false,
-          player2Confirmed: false,
-        })
+        formatTradeWindow(result.trade)
     );
   }
 
   if (subCommand === "gold") {
     const amount = Number(args[1] || 0);
 
-    if (amount < 0) {
-      return message.reply("❌ Gold amount cannot be negative.");
+    if (!Number.isInteger(amount) || amount < 0) {
+      return message.reply("❌ Gold amount must be a whole number and cannot be negative.");
     }
 
-    const player = await getPlayer(userId);
-    const playerGold = Number(player.gold || 0);
+    const tradeRef = db.collection("trades").doc(activeTrade.id);
+    const playerRef = db.collection("players").doc(userId);
 
-    if (playerGold < amount) {
-      return message.reply(`❌ You only have **${playerGold} Gold**.`);
-    }
+    const result = await db.runTransaction(async (transaction) => {
+      const tradeDoc = await transaction.get(tradeRef);
+      const playerDoc = await transaction.get(playerRef);
 
-    await db.collection("trades").doc(activeTrade.id).update({
-      [side.goldKey]: amount,
-      player1Confirmed: false,
-      player2Confirmed: false,
+      if (!tradeDoc.exists) {
+        return {
+          ok: false,
+          message: "❌ This trade no longer exists.",
+        };
+      }
+
+      if (!playerDoc.exists) {
+        return {
+          ok: false,
+          message: "❌ You no longer have a character.",
+        };
+      }
+
+      const latestTrade = {
+        id: tradeDoc.id,
+        ...tradeDoc.data(),
+      };
+
+      if (latestTrade.status !== "active") {
+        return {
+          ok: false,
+          message: "❌ This trade is no longer active.",
+        };
+      }
+
+      const latestSide = getTradeSide(latestTrade, userId);
+
+      if (!latestSide) {
+        return {
+          ok: false,
+          message: "❌ You are not part of this trade.",
+        };
+      }
+
+      const player = playerDoc.data();
+      const playerGold = Number(player.gold || 0);
+
+      if (playerGold < amount) {
+        return {
+          ok: false,
+          message: `❌ You only have **${playerGold} Gold**.`,
+        };
+      }
+
+      const updatedTrade = {
+        ...latestTrade,
+        [latestSide.goldKey]: amount,
+        player1Confirmed: false,
+        player2Confirmed: false,
+      };
+
+      transaction.update(tradeRef, {
+        [latestSide.goldKey]: amount,
+        player1Confirmed: false,
+        player2Confirmed: false,
+        updatedAt: new Date(),
+      });
+
+      return {
+        ok: true,
+        amount,
+        trade: updatedTrade,
+      };
     });
 
+    if (!result.ok) {
+      return message.reply(result.message || "❌ Failed to update gold offer.");
+    }
+
     return message.reply(
-      `✅ Gold offer updated to **${amount} Gold**.\n\n` +
-        formatTradeWindow({
-          ...activeTrade,
-          [side.goldKey]: amount,
-          player1Confirmed: false,
-          player2Confirmed: false,
-        })
+      `✅ Gold offer updated to **${result.amount} Gold**.\n\n` +
+        formatTradeWindow(result.trade)
     );
   }
 
@@ -613,6 +793,7 @@ module.exports = async function tradeCommand(message, args = []) {
 
       transaction.update(tradeRef, {
         [latestSide.confirmKey]: true,
+        updatedAt: new Date(),
       });
 
       return {
@@ -624,7 +805,9 @@ module.exports = async function tradeCommand(message, args = []) {
     });
 
     if (!confirmResult.ok) {
-      return message.reply(confirmResult.message || "❌ Trade confirmation failed.");
+      return message.reply(
+        confirmResult.message || "❌ Trade confirmation failed."
+      );
     }
 
     if (confirmResult.bothConfirmed) {
@@ -632,11 +815,8 @@ module.exports = async function tradeCommand(message, args = []) {
     }
 
     return message.reply(
-      `✅ You confirmed the trade.
-
-Waiting for the other player.
-
-` +
+      `✅ You confirmed the trade.\n\n` +
+        `Waiting for the other player.\n\n` +
         formatTradeWindow(confirmResult.trade)
     );
   }
@@ -652,7 +832,7 @@ Waiting for the other player.
 
     setTimeout(async () => {
       await deleteTradeChannel(message.guild, channelId);
-    }, tradeConfig.deleteChannelDelayMs);
+    }, tradeConfig.deleteChannelDelayMs).unref?.();
 
     return;
   }
@@ -663,6 +843,7 @@ Waiting for the other player.
       "`!s trade remove <item_id>`\n" +
       "`!s trade gold <amount>`\n" +
       "`!s trade confirm`\n" +
-      "`!s trade cancel`"
+      "`!s trade cancel`\n" +
+      "`!s trade status`"
   );
 };

@@ -8,6 +8,8 @@ const adminItems = require("../admin/adminItems");
 const adminPlayer = require("../admin/adminPlayer");
 const adminBoss = require("../admin/adminBoss");
 const adminReset = require("../admin/adminReset");
+const adminRoom = require("../admin/adminRoom");
+const adminMaintenance = require("../admin/adminMaintenance");
 
 module.exports = async function adminCommand(message, args = []) {
   if (!isAdmin(message.member)) {
@@ -28,7 +30,11 @@ module.exports = async function adminCommand(message, args = []) {
     return adminItems(message, args);
   }
 
-  if (["givegold", "setlevel", "heal", "revive", "inventory"].includes(subCommand)) {
+  if (
+    ["givegold", "setlevel", "heal", "revive", "inventory"].includes(
+      subCommand
+    )
+  ) {
     return adminPlayer(message, args);
   }
 
@@ -36,9 +42,23 @@ module.exports = async function adminCommand(message, args = []) {
     return adminBoss(message, args);
   }
 
-  if (["resettrade", "resetparty"].includes(subCommand)) {
+  if (["repairroom"].includes(subCommand)) {
+    return adminRoom(message, args);
+  }
+
+  if (["repairplayer"].includes(subCommand)) {
+    return adminMaintenance(message, args);
+  }
+
+  if (
+    ["resettrade", "resetparty", "resetbattle", "resetall"].includes(
+      subCommand
+    )
+  ) {
     return adminReset(message, args);
   }
 
-  return message.reply("❌ Unknown admin command. Use `!s admin help`.");
+  return message.reply(
+    "❌ Unknown admin command. Use `!s admin help`."
+  );
 };

@@ -8,6 +8,8 @@ const guildMemberAdd = require("./events/guildMemberAdd");
 const voiceStateUpdate = require("./events/voiceStateUpdate");
 
 const { startBossScheduler } = require("./services/bossScheduler");
+const { startTradeCleanup } = require("./services/tradeCleanupService");
+const { startPartyCleanup } = require("./services/partyCleanupService");
 
 const client = new Client({
   intents: [
@@ -32,9 +34,16 @@ client.once("clientReady", () => {
 
   // Start World Boss Scheduler
   startBossScheduler(client);
-
   console.log("Boss scheduler started.");
   console.log("Timezone: Asia/Manila");
+
+  // Start Trade Cleanup Service
+  startTradeCleanup(client);
+  console.log("Trade cleanup service started.");
+
+  // Start Party Cleanup Service
+  startPartyCleanup(client);
+  console.log("Party cleanup service started.");
 
   console.log("=================================");
 });

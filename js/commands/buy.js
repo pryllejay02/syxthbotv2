@@ -2,6 +2,8 @@ const { db } = require("../../firebase/firebase");
 const shopItems = require("../data/shopItems");
 const { getQualityEmoji } = require("../utils/qualitySystem");
 
+const MAX_BUY_QUANTITY = 99;
+
 function canUseItem(player, item) {
   if (!item.compatibleClasses) return true;
   if (item.compatibleClasses.includes("all")) return true;
@@ -9,12 +11,22 @@ function canUseItem(player, item) {
   return item.compatibleClasses.includes(player.classId);
 }
 
+function parseBuyQuantity(value) {
+  const quantity = Number(value || 1);
+
+  if (!Number.isInteger(quantity)) return null;
+  if (quantity <= 0) return null;
+  if (quantity > MAX_BUY_QUANTITY) return null;
+
+  return quantity;
+}
+
 module.exports = async function buyCommand(message, args = []) {
   const userId = message.author.id;
   const playerRef = db.collection("players").doc(userId);
 
   const itemId = args[0];
-  const quantity = parseInt(args[1]) || 1;
+  const quantity = parseBuyQuantity(args[1]);
 
   if (!itemId) {
     return message.reply(
@@ -22,12 +34,17 @@ module.exports = async function buyCommand(message, args = []) {
     );
   }
 
-  if (quantity <= 0) {
-    return message.reply("❌ Quantity must be greater than 0.");
+  if (!quantity) {
+    return message.reply(
+      `❌ Invalid quantity.\n\n` +
+        `Quantity must be a whole number from **1** to **${MAX_BUY_QUANTITY}**.`
+    );
   }
 
   const item = shopItems.find(
-    (shopItem) => shopItem.id.toLowerCase() === itemId.toLowerCase()
+    (shopItem) =>
+      shopItem.id &&
+      shopItem.id.toLowerCase() === itemId.toLowerCase()
   );
 
   if (!item) {
@@ -69,15 +86,16 @@ module.exports = async function buyCommand(message, args = []) {
     }
 
     const playerGold = Number(player.gold ?? 0);
-    const totalCost = Number(item.price) * quantity;
+    const itemPrice = Number(item.price || 0);
+    const totalCost = itemPrice * quantity;
 
     if (playerGold < totalCost) {
       return {
         ok: false,
         message:
           `💰 You don't have enough gold.\n\n` +
-          `Required: ${totalCost} Gold\n` +
-          `Your Gold: ${playerGold}`,
+          `Required: **${totalCost} Gold**\n` +
+          `Your Gold: **${playerGold}**`,
       };
     }
 
@@ -113,7 +131,8 @@ module.exports = async function buyCommand(message, args = []) {
       inventory[existingItemIndex] = {
         ...inventory[existingItemIndex],
         ...itemData,
-        quantity: Number(inventory[existingItemIndex].quantity || 0) + quantity,
+        quantity:
+          Number(inventory[existingItemIndex].quantity || 0) + quantity,
       };
     } else {
       inventory.push(itemData);
@@ -124,6 +143,7 @@ module.exports = async function buyCommand(message, args = []) {
     transaction.update(playerRef, {
       gold: newGold,
       inventory,
+      updatedAt: new Date(),
     });
 
     return {

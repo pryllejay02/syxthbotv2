@@ -1,88 +1,167 @@
 const { db } = require("../../firebase/firebase");
 
+const {
+  removeMemberFromPartyVoice,
+  safeDeletePartyVoiceChannel,
+} = require("../services/partyService");
+
+const ACTIVE_PARTY_STATUSES = ["forming", "ready", "raiding"];
+
+async function getPartyByVoiceChannelId(voiceChannelId) {
+  if (!voiceChannelId) return null;
+
+  const snapshot = await db
+    .collection("parties")
+    .where("voiceChannelId", "==", voiceChannelId)
+    .limit(1)
+    .get();
+
+  if (snapshot.empty) return null;
+
+  const doc = snapshot.docs[0];
+
+  return {
+    id: doc.id,
+    ...doc.data(),
+  };
+}
+
+function getNonBotMembers(channel) {
+  if (!channel) return [];
+
+  return [...channel.members.values()].filter(
+    (member) => !member.user.bot
+  );
+}
+
+async function removeMemberFromPartyDocument(party, userId) {
+  const partyRef = db.collection("parties").doc(party.id);
+
+  return db.runTransaction(async (transaction) => {
+    const partyDoc = await transaction.get(partyRef);
+
+    if (!partyDoc.exists) {
+      return {
+        ok: false,
+        message: "Party no longer exists.",
+      };
+    }
+
+    const latestParty = partyDoc.data();
+
+    const members = latestParty.members || [];
+    const invited = latestParty.invited || [];
+
+    const updatedMembers = members.filter((id) => id !== userId);
+    const updatedInvited = invited.filter((id) => id !== userId);
+
+    if (latestParty.leaderId === userId) {
+      transaction.delete(partyRef);
+
+      return {
+        ok: true,
+        deleted: true,
+        leaderLeft: true,
+        party: {
+          id: party.id,
+          ...latestParty,
+        },
+      };
+    }
+
+    if (updatedMembers.length === 0) {
+      transaction.delete(partyRef);
+
+      return {
+        ok: true,
+        deleted: true,
+        leaderLeft: false,
+        party: {
+          id: party.id,
+          ...latestParty,
+        },
+      };
+    }
+
+    transaction.update(partyRef, {
+      members: updatedMembers,
+      invited: updatedInvited,
+      updatedAt: new Date(),
+    });
+
+    return {
+      ok: true,
+      deleted: false,
+      leaderLeft: false,
+      updatedMembers,
+      updatedInvited,
+      party: {
+        id: party.id,
+        ...latestParty,
+        members: updatedMembers,
+        invited: updatedInvited,
+      },
+    };
+  });
+}
+
 module.exports = async function voiceStateUpdate(oldState, newState) {
   try {
-    const userId = oldState.member?.id || newState.member?.id;
+    const member = oldState.member || newState.member;
 
-    if (!userId) return;
+    if (!member || member.user.bot) return;
 
-    const oldChannelId = oldState.channelId;
-    const newChannelId = newState.channelId;
+    const userId = member.id;
 
-    if (oldChannelId === newChannelId) return;
+    const oldChannel = oldState.channel;
+    const newChannel = newState.channel;
 
-    const snapshot = await db
-      .collection("parties")
-      .where("status", "in", ["forming", "ready", "raiding"])
-      .get();
+    if (!oldChannel) return;
 
-    for (const doc of snapshot.docs) {
-      const party = doc.data();
+    // Ignore mute/deafen updates or same-channel updates.
+    if (oldChannel.id === newChannel?.id) return;
 
-      if (!party.voiceChannelId) continue;
-      if (oldChannelId !== party.voiceChannelId) continue;
+    const party = await getPartyByVoiceChannelId(oldChannel.id);
 
-      const members = party.members || [];
+    if (!party) return;
 
-      if (!members.includes(userId)) continue;
+    if (!ACTIVE_PARTY_STATUSES.includes(party.status || "ready")) return;
 
-      const channel =
-        oldState.guild.channels.cache.get(
-          party.voiceChannelId
-        );
+    const isPartyMember =
+      party.leaderId === userId ||
+      (party.members || []).includes(userId) ||
+      (party.invited || []).includes(userId);
 
-      // Leader left → remove entire party
-      if (party.leaderId === userId) {
-        if (channel) {
-          await channel.delete().catch(() => null);
-        }
+    if (!isPartyMember) return;
 
-        await db.collection("parties")
-          .doc(doc.id)
-          .delete();
+    await removeMemberFromPartyVoice(oldChannel, userId);
 
-        console.log(
-          `Party ${doc.id} deleted because leader left`
-        );
+    const result = await removeMemberFromPartyDocument(party, userId);
 
-        continue;
-      }
+    if (!result.ok) return;
 
-      // Remove normal member only
-      const updatedMembers =
-        members.filter(
-          (id) => id !== userId
-        );
+    const remainingNonBotMembers = getNonBotMembers(oldChannel);
 
-      await db.collection("parties")
-        .doc(doc.id)
-        .update({
-          members: updatedMembers,
-        });
+    if (
+      result.leaderLeft ||
+      result.deleted ||
+      remainingNonBotMembers.length === 0
+    ) {
+      await safeDeletePartyVoiceChannel(oldState.guild, party.voiceChannelId);
 
-      if (channel) {
-        await channel.permissionOverwrites
-          .delete(userId)
-          .catch(() => null);
+      console.log(
+        `Party ${party.id} deleted because ${
+          result.leaderLeft ? "leader left" : "voice channel became empty"
+        }.`
+      );
 
-        // Delete empty party
-        if (updatedMembers.length === 0) {
-          await channel.delete().catch(() => null);
-
-          await db.collection("parties")
-            .doc(doc.id)
-            .delete();
-
-          console.log(
-            `Party ${doc.id} deleted because no members remain`
-          );
-        }
-      }
+      return;
     }
-  } catch (error) {
-    console.error(
-      "voiceStateUpdate party error:",
-      error
+
+    console.log(
+      `User ${userId} removed from party ${party.id} because they left the party voice channel.`
     );
+  } catch (error) {
+    console.error("voiceStateUpdate party error:", error);
   }
 };

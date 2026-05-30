@@ -12,9 +12,12 @@ const {
 const {
   createPartyVoiceChannel,
   allowMemberInPartyVoice,
+  removeMemberFromPartyVoice,
   moveMemberToPartyVoice,
   createPartyDocument,
-  updatePartyMembers,
+  addInvitesToParty,
+  acceptPartyInvite,
+  removeMemberFromParty,
   disbandParty,
 } = require("../services/partyService");
 
@@ -26,13 +29,54 @@ function getPartyHelp() {
     `\`!s party accept\`\n` +
     `Accept a party invitation while inside the Party Queue voice channel.\n\n` +
     `\`!s party invite @member\`\n` +
-    `Invite more members if there is still a slot.\n\n` +
+    `Invite more members if there is still a slot. Leader only.\n\n` +
     `\`!s party status\`\n` +
     `View your current party.\n\n` +
     `\`!s party leave\`\n` +
     `Leave your party.\n\n` +
     `\`!s party disband\`\n` +
     `Disband party. Leader only.`
+  );
+}
+
+function formatMentions(ids = []) {
+  if (!ids.length) return "None";
+  return ids.map((id) => `<@${id}>`).join(", ");
+}
+
+async function filterUsersWithoutActiveParty(userIds = []) {
+  const valid = [];
+  const alreadyBusy = [];
+
+  for (const id of userIds) {
+    const activeParty = await findUserActiveParty(id);
+
+    if (activeParty) {
+      alreadyBusy.push(id);
+    } else {
+      valid.push(id);
+    }
+  }
+
+  return {
+    valid,
+    alreadyBusy,
+  };
+}
+
+async function getPartyVoiceChannel(message, activeParty, worldConfig) {
+  if (activeParty.voiceChannelId) {
+    const existingChannel = await message.guild.channels
+      .fetch(activeParty.voiceChannelId)
+      .catch(() => null);
+
+    if (existingChannel) return existingChannel;
+  }
+
+  return createPartyVoiceChannel(
+    message,
+    worldConfig,
+    activeParty.leaderId
   );
 }
 
@@ -100,12 +144,17 @@ module.exports = async function partyCommand(message, args = []) {
     const { validInvites, invalidInvites } =
       await filterSameWorldInvites(rawInviteIds, worldId);
 
-    const uniqueInvites = validInvites.slice(0, partyConfig.maxMembers - 1);
+    const activeCheck = await filterUsersWithoutActiveParty(validInvites);
+
+    const uniqueInvites = activeCheck.valid.slice(
+      0,
+      partyConfig.maxMembers - 1
+    );
 
     if (uniqueInvites.length === 0) {
       return message.reply(
         "❌ No valid members to invite.\n\n" +
-        "Members must have a character and must be in the same world as you."
+          "Members must have a character, be in the same world, and not be in another active party."
       );
     }
 
@@ -131,13 +180,19 @@ module.exports = async function partyCommand(message, args = []) {
       `👥 **Party Created!**\n\n` +
       `👑 Leader: <@${userId}>\n` +
       `🔊 Voice: <#${partyVoiceChannel.id}>\n` +
-      `📨 Invited: ${uniqueInvites.map((id) => `<@${id}>`).join(", ")}\n\n` +
+      `👥 Members: **1/${partyConfig.maxMembers}**\n` +
+      `📨 Invited: ${formatMentions(uniqueInvites)}\n\n` +
       `Invited members must join the **Party Queue Voice Channel** first, then type:\n` +
       `\`!s party accept\``;
 
     if (invalidInvites.length > 0) {
       reply +=
         `\n\n⚠️ Some mentioned users were skipped because they have no character or are in a different world.`;
+    }
+
+    if (activeCheck.alreadyBusy.length > 0) {
+      reply +=
+        `\n⚠️ Some mentioned users were skipped because they are already in or invited to another party.`;
     }
 
     return message.reply(reply);
@@ -171,46 +226,33 @@ module.exports = async function partyCommand(message, args = []) {
       );
     }
 
-    const members = activeParty.members || [];
+    const partyVoiceChannel = await getPartyVoiceChannel(
+      message,
+      activeParty,
+      worldConfig
+    );
 
-    if (members.length >= partyConfig.maxMembers) {
-      return message.reply("❌ This party is already full.");
-    }
+    const acceptResult = await acceptPartyInvite(
+      activeParty.id,
+      userId,
+      partyVoiceChannel.id
+    );
 
-    let partyVoiceChannel = null;
-
-    if (activeParty.voiceChannelId) {
-      partyVoiceChannel = await message.guild.channels
-        .fetch(activeParty.voiceChannelId)
-        .catch(() => null);
-    }
-
-    if (!partyVoiceChannel) {
-      partyVoiceChannel = await createPartyVoiceChannel(
-        message,
-        worldConfig,
-        activeParty.leaderId
-      );
+    if (!acceptResult.ok) {
+      return message.reply(`❌ ${acceptResult.message}`);
     }
 
     await allowMemberInPartyVoice(partyVoiceChannel, userId);
     await moveMemberToPartyVoice(message.member, partyVoiceChannel);
 
-    const updatedMembers = [...new Set([...members, userId])];
-    const updatedInvited = (activeParty.invited || []).filter(
-      (id) => id !== userId
-    );
-
-    await updatePartyMembers(
-      activeParty.id,
-      updatedMembers,
-      updatedInvited,
-      partyVoiceChannel.id
-    );
+    const updatedMembers = acceptResult.updatedMembers ||
+      acceptResult.party?.members ||
+      [];
 
     return message.reply(
       `✅ <@${userId}> joined the party!\n\n` +
-      `👥 Members: ${updatedMembers.length}/${partyConfig.maxMembers}`
+        `👥 Members: **${updatedMembers.length}/${partyConfig.maxMembers}**\n` +
+        `🔊 Voice: <#${partyVoiceChannel.id}>`
     );
   }
 
@@ -225,60 +267,42 @@ module.exports = async function partyCommand(message, args = []) {
       return message.reply("❌ Only the party leader can invite members.");
     }
 
-    const currentCount =
-      Number((activeParty.members || []).length) +
-      Number((activeParty.invited || []).length);
-
-    if (currentCount >= partyConfig.maxMembers) {
-      return message.reply("❌ Your party is already full or has max pending invites.");
-    }
-
     const mentions = getMentions(message);
 
     if (mentions.length === 0) {
       return message.reply("❌ Mention a member to invite.");
     }
 
-    const availableSlots = partyConfig.maxMembers - currentCount;
-
-    const rawInviteIds = mentions
-      .map((user) => user.id)
-      .filter(
-        (id) =>
-          id !== userId &&
-          !(activeParty.members || []).includes(id) &&
-          !(activeParty.invited || []).includes(id)
-      );
+    const rawInviteIds = [...new Set(mentions.map((user) => user.id))]
+      .filter((id) => id !== userId);
 
     const { validInvites, invalidInvites } =
       await filterSameWorldInvites(rawInviteIds, activeParty.worldId);
 
-    const newInvites = validInvites.slice(0, availableSlots);
+    const activeCheck = await filterUsersWithoutActiveParty(validInvites);
 
-    if (newInvites.length === 0) {
-      return message.reply(
-        "❌ No valid new members to invite.\n\n" +
-        "Members must have a character and must be in the same world as the party."
-      );
+    const inviteResult = await addInvitesToParty(
+      activeParty.id,
+      activeCheck.valid
+    );
+
+    if (!inviteResult.ok) {
+      return message.reply(`❌ ${inviteResult.message}`);
     }
 
-    const updatedInvited = [
-      ...(activeParty.invited || []),
-      ...newInvites,
-    ];
-
-    await db.collection("parties").doc(activeParty.id).update({
-      invited: updatedInvited,
-    });
-
     let reply =
-      `📨 Invited: ${newInvites.map((id) => `<@${id}>`).join(", ")}\n\n` +
+      `📨 Invited: ${formatMentions(inviteResult.newInvites)}\n\n` +
       `They must join the **Party Queue Voice Channel** and type:\n` +
       `\`!s party accept\``;
 
     if (invalidInvites.length > 0) {
       reply +=
         `\n\n⚠️ Some mentioned users were skipped because they have no character or are in a different world.`;
+    }
+
+    if (activeCheck.alreadyBusy.length > 0) {
+      reply +=
+        `\n⚠️ Some mentioned users were skipped because they are already in or invited to another party.`;
     }
 
     return message.reply(reply);
@@ -291,22 +315,22 @@ module.exports = async function partyCommand(message, args = []) {
       return message.reply("❌ You are not in a party.");
     }
 
+    const members = activeParty.members || [];
+    const invited = activeParty.invited || [];
+
     return message.reply(
       `👥 **Party Status**\n\n` +
-      `👑 Leader: <@${activeParty.leaderId}>\n` +
-      `🌍 World: **${activeParty.worldId}**\n` +
-      `👥 Members: ${(activeParty.members || []).map((id) => `<@${id}>`).join(", ")}\n` +
-      `📨 Invited: ${
-        (activeParty.invited || []).length
-          ? activeParty.invited.map((id) => `<@${id}>`).join(", ")
-          : "None"
-      }\n` +
-      `📊 Status: **${activeParty.status}**\n` +
-      `🔊 Voice: ${
-        activeParty.voiceChannelId
-          ? `<#${activeParty.voiceChannelId}>`
-          : "Not created yet"
-      }`
+        `👑 Leader: <@${activeParty.leaderId}>\n` +
+        `🌍 World: **${activeParty.worldId}**\n` +
+        `👥 Members: **${members.length}/${partyConfig.maxMembers}**\n` +
+        `${formatMentions(members)}\n\n` +
+        `📨 Invited: ${formatMentions(invited)}\n` +
+        `📊 Status: **${activeParty.status || "ready"}**\n` +
+        `🔊 Voice: ${
+          activeParty.voiceChannelId
+            ? `<#${activeParty.voiceChannelId}>`
+            : "Not created yet"
+        }`
     );
   }
 
@@ -323,18 +347,11 @@ module.exports = async function partyCommand(message, args = []) {
       );
     }
 
-    const updatedMembers = (activeParty.members || []).filter(
-      (id) => id !== userId
-    );
+    const leaveResult = await removeMemberFromParty(activeParty.id, userId);
 
-    const updatedInvited = (activeParty.invited || []).filter(
-      (id) => id !== userId
-    );
-
-    await db.collection("parties").doc(activeParty.id).update({
-      members: updatedMembers,
-      invited: updatedInvited,
-    });
+    if (!leaveResult.ok) {
+      return message.reply(`❌ ${leaveResult.message}`);
+    }
 
     if (activeParty.voiceChannelId) {
       const channel = await message.guild.channels
@@ -342,7 +359,7 @@ module.exports = async function partyCommand(message, args = []) {
         .catch(() => null);
 
       if (channel) {
-        await channel.permissionOverwrites.delete(userId).catch(() => null);
+        await removeMemberFromPartyVoice(channel, userId);
       }
     }
 

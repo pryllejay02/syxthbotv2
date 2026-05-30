@@ -27,6 +27,87 @@ async function getActiveBoss(worldId) {
   };
 }
 
+function getTimestampMillis(value) {
+  if (!value) return 0;
+
+  if (typeof value === "number") {
+    return value;
+  }
+
+  if (value.toMillis) {
+    return value.toMillis();
+  }
+
+  if (value.toDate) {
+    return value.toDate().getTime();
+  }
+
+  const parsed = new Date(value).getTime();
+
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+async function deleteBossData(worldId) {
+  const bossRef = db.collection("worldBosses").doc(worldId);
+  const damageSnapshot = await bossRef.collection("damage").get();
+
+  const docs = [...damageSnapshot.docs, { ref: bossRef }];
+  const chunkSize = 450;
+
+  for (let i = 0; i < docs.length; i += chunkSize) {
+    const batch = db.batch();
+
+    docs.slice(i, i + chunkSize).forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+
+    await batch.commit();
+  }
+
+  console.log(`Boss data for ${worldId} deleted.`);
+}
+
+async function clearOldBossIfNeeded(worldId, existingBoss) {
+  if (!existingBoss) {
+    return {
+      cleared: false,
+      reason: "no_existing_boss",
+    };
+  }
+
+  const bossHp = Number(existingBoss.hp || 0);
+  const bossStatus = String(existingBoss.status || "unknown").toLowerCase();
+
+  // Clear old defeated, inactive, or corrupted boss data before a new spawn.
+  // This also clears the old damage/ranking subcollection.
+  if (bossStatus !== "active" || bossHp <= 0) {
+    await deleteBossData(worldId);
+
+    return {
+      cleared: true,
+      reason: "old_inactive_or_defeated_boss",
+    };
+  }
+
+  const spawnedAt = getTimestampMillis(existingBoss.spawnedAt);
+  const expireMinutes = Number(bossConfig.bossExpireMinutes || 120);
+  const expiresAt = spawnedAt + expireMinutes * 60 * 1000;
+
+  if (spawnedAt && Date.now() >= expiresAt) {
+    await deleteBossData(worldId);
+
+    return {
+      cleared: true,
+      reason: "old_active_boss_expired",
+    };
+  }
+
+  return {
+    cleared: false,
+    reason: "active_boss_still_valid",
+  };
+}
+
 async function spawnBoss(client, worldId, tier) {
   const worldConfig = partyConfig.worlds[worldId];
 
@@ -37,21 +118,22 @@ async function spawnBoss(client, worldId, tier) {
 
   const existingBoss = await getActiveBoss(worldId);
 
-  if (existingBoss && existingBoss.status === "active") {
-    const spawnedAt = existingBoss.spawnedAt?.toDate
-      ? existingBoss.spawnedAt.toDate()
-      : new Date(existingBoss.spawnedAt);
+  if (existingBoss) {
+    const cleanupResult = await clearOldBossIfNeeded(worldId, existingBoss);
 
-    const expireMinutes = Number(bossConfig.bossExpireMinutes || 120);
-    const expiresAt = spawnedAt.getTime() + expireMinutes * 60 * 1000;
-
-    if (Date.now() < expiresAt) {
+    if (
+      !cleanupResult.cleared &&
+      cleanupResult.reason === "active_boss_still_valid"
+    ) {
       console.log(`Boss already active in ${worldId}`);
       return existingBoss;
     }
 
-    console.log(`Boss expired in ${worldId}. Clearing old boss...`);
-    await deleteBossData(worldId);
+    if (cleanupResult.cleared) {
+      console.log(
+        `Old boss data cleared in ${worldId}. Reason: ${cleanupResult.reason}`
+      );
+    }
   }
 
   const boss = getRandomBossByTier(tier);
@@ -78,6 +160,7 @@ async function spawnBoss(client, worldId, tier) {
 
     status: "active",
     spawnedAt: new Date(),
+    updatedAt: new Date(),
   };
 
   await db.collection("worldBosses").doc(worldId).set(bossData);
@@ -103,13 +186,22 @@ async function spawnBoss(client, worldId, tier) {
           `Use \`!s raid hit\`\n` +
           `Use \`!s raid status\``
       )
-      .setFooter({ text: "Syxth Boss Raid" });
+      .setFooter({
+        text: "Syxth Boss Raid",
+      })
+      .setTimestamp();
 
     if (bossImage) {
       embed.setImage(`attachment://${bossImage.name}`);
-      await channel.send({ embeds: [embed], files: [bossImage] });
+
+      await channel.send({
+        embeds: [embed],
+        files: [bossImage],
+      });
     } else {
-      await channel.send({ embeds: [embed] });
+      await channel.send({
+        embeds: [embed],
+      });
     }
   }
 
@@ -125,7 +217,13 @@ function calculateThreatGain(player, damage) {
   return Math.floor(Number(damage || 0) + defense * 0.5 + tankerBonus);
 }
 
-async function saveDamage(worldId, player, damage, partyId = null, threatGain = 0) {
+async function saveDamage(
+  worldId,
+  player,
+  damage,
+  partyId = null,
+  threatGain = 0
+) {
   const damageRef = db
     .collection("worldBosses")
     .doc(worldId)
@@ -145,6 +243,7 @@ async function saveDamage(worldId, player, damage, partyId = null, threatGain = 
         threat: Number(threatGain || 0),
         lastHitAt: new Date(),
       });
+
       return;
     }
 
@@ -169,7 +268,10 @@ async function pickBossTarget(worldId) {
     .get();
 
   const participants = snapshot.docs
-    .map((doc) => ({ id: doc.id, ...doc.data() }))
+    .map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }))
     .filter((entry) => Number(entry.threat || 0) > 0);
 
   if (participants.length === 0) return null;
@@ -199,7 +301,9 @@ async function getDamageRanking(worldId, limit = 10) {
     .collection("damage")
     .orderBy("damage", "desc");
 
-  if (limit) query = query.limit(limit);
+  if (limit) {
+    query = query.limit(limit);
+  }
 
   const snapshot = await query.get();
 
@@ -212,22 +316,6 @@ async function getDamageRanking(worldId, limit = 10) {
 
 async function getAllDamageRanking(worldId) {
   return getDamageRanking(worldId, null);
-}
-
-async function deleteBossData(worldId) {
-  const bossRef = db.collection("worldBosses").doc(worldId);
-  const damageSnapshot = await bossRef.collection("damage").get();
-
-  const docs = [...damageSnapshot.docs, { ref: bossRef }];
-  const chunkSize = 450;
-
-  for (let i = 0; i < docs.length; i += chunkSize) {
-    const batch = db.batch();
-    docs.slice(i, i + chunkSize).forEach((doc) => batch.delete(doc.ref));
-    await batch.commit();
-  }
-
-  console.log(`Boss data for ${worldId} deleted.`);
 }
 
 function getRewardPenalty(playerLevel, bossLevel) {
@@ -287,9 +375,18 @@ function rollChance(percent) {
 }
 
 function getLegendaryChanceByRank(rank) {
-  if (rank === 1) return bossConfig.rankingRewards.top1.legendaryChance;
-  if (rank >= 2 && rank <= 5) return bossConfig.rankingRewards.top2to5.legendaryChance;
-  if (rank >= 6 && rank <= 10) return bossConfig.rankingRewards.top6to10.legendaryChance;
+  if (rank === 1) {
+    return bossConfig.rankingRewards.top1.legendaryChance;
+  }
+
+  if (rank >= 2 && rank <= 5) {
+    return bossConfig.rankingRewards.top2to5.legendaryChance;
+  }
+
+  if (rank >= 6 && rank <= 10) {
+    return bossConfig.rankingRewards.top6to10.legendaryChance;
+  }
+
   return 0;
 }
 
@@ -301,6 +398,7 @@ module.exports = {
   getDamageRanking,
   getAllDamageRanking,
   deleteBossData,
+  clearOldBossIfNeeded,
   getRewardPenalty,
   rollChance,
   getLegendaryChanceByRank,

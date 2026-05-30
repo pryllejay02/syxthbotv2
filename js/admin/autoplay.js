@@ -3,6 +3,7 @@ const hitCommand = require("../commands/hit");
 
 const { isCreator } = require("../utils/adminUtils");
 const { db } = require("../../firebase/firebase");
+const { resolvePlayerRevive } = require("../utils/reviveSystem");
 
 const autoPlayers = new Map();
 
@@ -52,6 +53,22 @@ module.exports = async function autoplay(message, args = []) {
     return message.reply("⚠️ Already active.");
   }
 
+  const playerRef = db.collection("players").doc(userId);
+  const playerDoc = await playerRef.get();
+
+  if (!playerDoc.exists) {
+    return message.reply("❌ You don’t have a character yet. Use `!s start` first.");
+  }
+
+  const player = playerDoc.data();
+
+  // Optional safety: Auto Hunt should run only inside your private MMORPG room.
+  if (player.privateChannelId && message.channel.id !== player.privateChannelId) {
+    return message.reply(
+      `❌ Please start Auto Hunt inside your private room: <#${player.privateChannelId}>`
+    );
+  }
+
   await message.reply("🤖 Auto Hunt ON");
 
   const state = {
@@ -64,27 +81,36 @@ module.exports = async function autoplay(message, args = []) {
     state.running = true;
 
     try {
-      const playerDoc = await db
-        .collection("players")
-        .doc(userId)
-        .get();
+      const latestPlayerDoc = await playerRef.get();
 
-      if (!playerDoc.exists) {
+      if (!latestPlayerDoc.exists) {
         clearInterval(interval);
         autoPlayers.delete(userId);
         return;
       }
 
-      const player = playerDoc.data();
+      let latestPlayer = latestPlayerDoc.data();
 
-      if (Number(player.hp || 0) <= 0) {
+      // Auto Hunt bypasses commandHandler,
+      // so revive recovery must also happen here.
+      const reviveResult = await resolvePlayerRevive(playerRef, latestPlayer);
+      latestPlayer = reviveResult.player;
+
+      if (reviveResult.revived) {
+        await message.channel
+          .send(
+            `✨ Auto Hunt revive detected.\n` +
+              `❤️ HP Restored: **${reviveResult.revivedHp}/${latestPlayer.maxHp || 100}**`
+          )
+          .catch(() => null);
+      }
+
+      if (Number(latestPlayer.hp || 0) <= 0) {
         return;
       }
 
-      const battleDoc = await db
-        .collection("battles")
-        .doc(userId)
-        .get();
+      const battleRef = db.collection("battles").doc(userId);
+      const battleDoc = await battleRef.get();
 
       if (!battleDoc.exists) {
         await huntCommand(message);
@@ -94,10 +120,7 @@ module.exports = async function autoplay(message, args = []) {
         );
       }
 
-      const latestBattleDoc = await db
-        .collection("battles")
-        .doc(userId)
-        .get();
+      const latestBattleDoc = await battleRef.get();
 
       if (latestBattleDoc.exists) {
         await hitCommand(message);

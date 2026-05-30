@@ -5,7 +5,7 @@ const monsters = require("../data/monsters");
 function getRandomMonster(playerLevel) {
   const level = Number(playerLevel || 1);
 
-  // New players should learn the game safely, but not grind Slimes forever.
+  // New players should learn safely first.
   if (level <= 3) {
     const levelOneMonsters = monsters.filter(
       (monster) => Number(monster.level) === 1
@@ -20,6 +20,7 @@ function getRandomMonster(playerLevel) {
     return monsters[0];
   }
 
+  // Prevent high-level players from fighting very low-level monsters too often.
   const minLevel = Math.max(1, level - 5);
   const maxLevel = level + 3;
 
@@ -32,7 +33,9 @@ function getRandomMonster(playerLevel) {
     return monsters[0];
   }
 
-  return possibleMonsters[Math.floor(Math.random() * possibleMonsters.length)];
+  return possibleMonsters[
+    Math.floor(Math.random() * possibleMonsters.length)
+  ];
 }
 
 module.exports = async function huntCommand(message) {
@@ -41,79 +44,98 @@ module.exports = async function huntCommand(message) {
   const playerRef = db.collection("players").doc(userId);
   const battleRef = db.collection("battles").doc(userId);
 
-  const playerDoc = await playerRef.get();
-  const battleDoc = await battleRef.get();
+  const result = await db.runTransaction(async (transaction) => {
+    const playerDoc = await transaction.get(playerRef);
+    const battleDoc = await transaction.get(battleRef);
 
-  if (!playerDoc.exists) {
-    return message.reply(
-      "You don’t have a character yet. Use `!s start` first."
-    );
-  }
+    if (!playerDoc.exists) {
+      return {
+        ok: false,
+        message: "You don’t have a character yet. Use `!s start` first.",
+      };
+    }
 
-  if (battleDoc.exists) {
-    const battle = battleDoc.data();
+    if (battleDoc.exists) {
+      const battle = battleDoc.data();
 
-    return message.reply(
-      `⚔️ You are already fighting **${battle.monsterName}**!\n\n` +
-      `❤️ Monster HP: ${battle.monsterHp}/${battle.monsterMaxHp}\n` +
-      `Use \`!s hit\` or \`!s retreat\`.`
-    );
-  }
+      return {
+        ok: false,
+        message:
+          `⚔️ You are already fighting **${battle.monsterName}**!\n\n` +
+          `❤️ Monster HP: ${battle.monsterHp}/${battle.monsterMaxHp}\n` +
+          `Use \`!s hit\` or \`!s retreat\`.`,
+      };
+    }
 
-  const player = playerDoc.data();
+    const player = playerDoc.data();
 
-  if (Number(player.hp || 0) <= 0) {
-    return message.reply(
-      "💀 You are defeated. Use `!s rest` before hunting again."
-    );
-  }
+    if (Number(player.hp || 0) <= 0) {
+      return {
+        ok: false,
+        message: "💀 You are defeated. Use `!s rest` before hunting again.",
+      };
+    }
 
-  const monster = getRandomMonster(
-    Number(player.level || 1)
-  );
+    const monster = getRandomMonster(Number(player.level || 1));
 
-  // DEFAULTS IF MONSTER DOESN'T HAVE STATS YET
-  const monsterDodge = Number(monster.dodge || 0);
-  const monsterCrit = Number(monster.crit || 0);
+    const monsterDodge = Number(monster.dodge || 0);
+    const monsterCrit = Number(monster.crit || 0);
 
-  await battleRef.set({
-    userId: userId,
+    const battleData = {
+      userId,
 
-    monsterName: monster.name,
-    monsterLevel: monster.level,
+      monsterName: monster.name,
+      monsterLevel: monster.level,
 
-    monsterHp: monster.hp,
-    monsterMaxHp: monster.hp,
+      monsterHp: monster.hp,
+      monsterMaxHp: monster.hp,
 
-    monsterAttack: monster.attack,
-    monsterDefense: monster.defense,
+      monsterAttack: monster.attack,
+      monsterDefense: monster.defense,
 
-    monsterCrit: monsterCrit,
-    monsterDodge: monsterDodge,
+      monsterCrit,
+      monsterDodge,
 
-    monsterExp: monster.exp,
-    monsterGold: monster.gold,
+      monsterExp: monster.exp,
+      monsterGold: monster.gold,
 
-    createdAt: new Date(),
+      createdAt: new Date(),
+    };
+
+    transaction.set(battleRef, battleData);
+
+    return {
+      ok: true,
+      monster,
+      monsterDodge,
+      monsterCrit,
+    };
   });
 
-  const monsterImage = new AttachmentBuilder(
-    monster.image
-  );
+  if (!result.ok) {
+    return message.reply(result.message || "❌ Hunt failed.");
+  }
 
-  return message.reply({
-    content:
-      `🌑 A wild **${monster.name}** appeared!\n\n` +
+  const { monster, monsterDodge, monsterCrit } = result;
 
-      `👹 Monster Lv.${monster.level}\n` +
-      `❤️ HP: ${monster.hp}/${monster.hp}\n` +
-      `⚔️ Attack: ${monster.attack}\n` +
-      `🛡️ Defense: ${monster.defense}\n` +
-      `💨 Dodge: ${monsterDodge}%\n` +
-      `💥 Crit: ${monsterCrit}%\n\n` +
+  const content =
+    `🌑 A wild **${monster.name}** appeared!\n\n` +
+    `👹 Monster Lv.${monster.level}\n` +
+    `❤️ HP: ${monster.hp}/${monster.hp}\n` +
+    `⚔️ Attack: ${monster.attack}\n` +
+    `🛡️ Defense: ${monster.defense}\n` +
+    `💨 Dodge: ${monsterDodge}%\n` +
+    `💥 Crit: ${monsterCrit}%\n\n` +
+    `Use \`!s hit\` to attack or \`!s retreat\` to escape.`;
 
-      `Use \`!s hit\` to attack or \`!s retreat\` to escape.`,
+  if (monster.image) {
+    const monsterImage = new AttachmentBuilder(monster.image);
 
-    files: [monsterImage],
-  });
+    return message.reply({
+      content,
+      files: [monsterImage],
+    });
+  }
+
+  return message.reply(content);
 };

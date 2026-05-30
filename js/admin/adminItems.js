@@ -4,6 +4,8 @@ const bossConfig = require("../data/bossConfig");
 const { getQualityEmoji } = require("../utils/qualitySystem");
 const { generateBossDrop } = require("../utils/bossLootSystem");
 
+const MAX_ADMIN_ITEM_QUANTITY = 50;
+
 function getMention(message) {
   return message.mentions.users.first();
 }
@@ -38,37 +40,74 @@ function makeDescription(stats) {
   if (stats.dodge) parts.push(`+${stats.dodge}% Dodge`);
   if (stats.crit) parts.push(`+${stats.crit}% Crit`);
 
-  return parts.join(", ");
+  return parts.length ? parts.join(", ") : "No bonus stats";
+}
+
+function normalizeQuality(input, allowedQualities) {
+  return allowedQualities.find(
+    (quality) =>
+      quality.toLowerCase() === String(input || "").toLowerCase()
+  );
+}
+
+function parseQuantity(value) {
+  const quantity = Number(value || 1);
+
+  if (!Number.isInteger(quantity)) return null;
+  if (quantity <= 0) return null;
+  if (quantity > MAX_ADMIN_ITEM_QUANTITY) return null;
+
+  return quantity;
 }
 
 function generateAdminItem(baseItem, quality) {
   const stats = scaleStatsByQuality(baseItem.stats || {}, quality);
   const qualityEmoji = getQualityEmoji(quality);
 
+  const cleanBaseName = String(baseItem.name || "Unknown Item").replace(
+    /^Common /,
+    ""
+  );
+
   return {
     ...baseItem,
-    id: `${baseItem.id}_${quality.toLowerCase()}_admin_${Date.now()}_${Math.floor(Math.random() * 99999)}`,
+
+    id: `${baseItem.id}_${quality.toLowerCase()}_admin_${Date.now()}_${Math.floor(
+      Math.random() * 99999
+    )}`,
+
     baseItemId: baseItem.id,
-    name: baseItem.name.replace(/^Common /, `${quality} `),
+
+    name:
+      quality === "Common"
+        ? `Common ${cleanBaseName}`
+        : `${quality} ${cleanBaseName}`,
+
     quality,
     qualityEmoji,
+
+    requiredLevel: baseItem.requiredLevel || 1,
+    compatibleClasses: baseItem.compatibleClasses || ["all"],
+
     price: Math.floor(
       Number(baseItem.price || 0) *
         (quality === "Legendary" ? 5 : quality === "Rare" ? 2 : 1)
     ),
+
     description: makeDescription(stats),
     stats,
+
     quantity: 1,
     source: "admin_generated",
   };
 }
 
-function addItemToInventory(inventory, item, quantity) {
+function addItemToInventory(inventory, item, quantity = 1) {
   const existingIndex = inventory.findIndex(
     (invItem) =>
       invItem.baseItemId === item.baseItemId &&
       invItem.quality === item.quality &&
-      JSON.stringify(invItem.stats) === JSON.stringify(item.stats)
+      JSON.stringify(invItem.stats || {}) === JSON.stringify(item.stats || {})
   );
 
   if (existingIndex !== -1) {
@@ -92,11 +131,24 @@ function getBossLevelByIdOrTier(value) {
   }
 
   for (const bosses of Object.values(bossConfig.bosses)) {
-    const found = bosses.find((boss) => boss.id.toLowerCase() === key);
+    const found = bosses.find(
+      (boss) => boss.id && boss.id.toLowerCase() === key
+    );
+
     if (found) return found.level;
   }
 
   return null;
+}
+
+function formatItemStats(item) {
+  return (
+    `⚔️ ${item.stats?.attack || 0} | ` +
+    `🛡️ ${item.stats?.defense || 0} | ` +
+    `❤️ ${item.stats?.maxHp || 0} | ` +
+    `💨 ${item.stats?.dodge || 0}% | ` +
+    `💥 ${item.stats?.crit || 0}%`
+  );
 }
 
 module.exports = async function adminItems(message, args = []) {
@@ -108,73 +160,105 @@ module.exports = async function adminItems(message, args = []) {
   }
 
   const playerRef = db.collection("players").doc(target.id);
-  const playerDoc = await playerRef.get();
-
-  if (!playerDoc.exists) {
-    return message.reply("❌ Character not found.");
-  }
-
-  const player = playerDoc.data();
 
   if (subCommand === "giveitem") {
     const itemId = args[2];
     const qualityInput = args[3] || "Common";
-    const quantity = Number(args[4] || 1);
+    const quantity = parseQuantity(args[4] || 1);
 
-    if (!itemId || quantity <= 0) {
+    if (!itemId || !quantity) {
       return message.reply(
-        "❌ Usage: `!s admin giveitem @player <item_id> <Common/Rare/Legendary> <qty>`"
+        "❌ Usage: `!s admin giveitem @player <item_id> <Common/Rare/Legendary> <qty>`\n" +
+          `Quantity must be from **1-${MAX_ADMIN_ITEM_QUANTITY}**.`
       );
     }
 
-    const validQuality = ["Common", "Rare", "Legendary"].find(
-      (q) => q.toLowerCase() === String(qualityInput).toLowerCase()
-    );
+    const validQuality = normalizeQuality(qualityInput, [
+      "Common",
+      "Rare",
+      "Legendary",
+    ]);
 
     if (!validQuality) {
-      return message.reply("❌ Quality must be `Common`, `Rare`, or `Legendary`.");
+      return message.reply(
+        "❌ Quality must be `Common`, `Rare`, or `Legendary`."
+      );
     }
 
     const baseItem = shopItems.find(
-      (shopItem) => shopItem.id.toLowerCase() === itemId.toLowerCase()
+      (shopItem) =>
+        shopItem.id.toLowerCase() === String(itemId).toLowerCase()
     );
 
     if (!baseItem) {
       return message.reply("❌ Item not found in shopItems.");
     }
 
-    const inventory = player.inventory || [];
-    const givenItems = [];
+    const result = await db.runTransaction(async (transaction) => {
+      const playerDoc = await transaction.get(playerRef);
 
-    for (let i = 0; i < quantity; i++) {
-      const item = generateAdminItem(baseItem, validQuality);
-      addItemToInventory(inventory, item, 1);
-      givenItems.push(item);
+      if (!playerDoc.exists) {
+        return {
+          ok: false,
+          message: "❌ Character not found.",
+        };
+      }
+
+      const player = playerDoc.data();
+      const inventory = [...(player.inventory || [])];
+      const givenItems = [];
+
+      for (let i = 0; i < quantity; i++) {
+        const item = generateAdminItem(baseItem, validQuality);
+
+        addItemToInventory(inventory, item, 1);
+        givenItems.push(item);
+      }
+
+      transaction.update(playerRef, {
+        inventory,
+      });
+
+      return {
+        ok: true,
+        givenItems,
+      };
+    });
+
+    if (!result.ok) {
+      return message.reply(result.message || "❌ Give item failed.");
     }
 
-    await playerRef.update({ inventory });
+    const exampleItem = result.givenItems[0];
+    const cleanBaseName = String(baseItem.name || "Unknown Item").replace(
+      /^Common /,
+      ""
+    );
 
     return message.reply(
-      `✅ Gave **${quantity}x ${validQuality} ${baseItem.name.replace(/^Common /, "")}** to ${target.username}.\n` +
-        `🎁 Example Roll: **${givenItems[0].qualityEmoji} ${givenItems[0].name}**\n` +
-        `📊 Stats: ⚔️ ${givenItems[0].stats?.attack || 0} | 🛡️ ${givenItems[0].stats?.defense || 0} | ❤️ ${givenItems[0].stats?.maxHp || 0} | 💨 ${givenItems[0].stats?.dodge || 0}% | 💥 ${givenItems[0].stats?.crit || 0}%`
+      `✅ Gave **${quantity}x ${validQuality} ${cleanBaseName}** to ${target.username}.\n\n` +
+        `🎁 Example Roll: **${exampleItem.qualityEmoji} ${exampleItem.name}**\n` +
+        `🏷️ ID: \`${exampleItem.id}\`\n` +
+        `📊 Stats: ${formatItemStats(exampleItem)}`
     );
   }
 
   if (subCommand === "givebossitem") {
     const bossOrTier = args[2];
-    const quality = args[3];
-    const quantity = Number(args[4] || 1);
+    const qualityInput = args[3];
+    const quantity = parseQuantity(args[4] || 1);
 
-    if (!bossOrTier || !quality || quantity <= 0) {
+    if (!bossOrTier || !qualityInput || !quantity) {
       return message.reply(
-        "❌ Usage: `!s admin givebossitem @player <boss_id/tier> <Rare/Legendary> <qty>`"
+        "❌ Usage: `!s admin givebossitem @player <boss_id/tier> <Rare/Legendary> <qty>`\n" +
+          `Quantity must be from **1-${MAX_ADMIN_ITEM_QUANTITY}**.`
       );
     }
 
-    const validQuality = ["Rare", "Legendary"].find(
-      (q) => q.toLowerCase() === String(quality).toLowerCase()
-    );
+    const validQuality = normalizeQuality(qualityInput, [
+      "Rare",
+      "Legendary",
+    ]);
 
     if (!validQuality) {
       return message.reply("❌ Quality must be `Rare` or `Legendary`.");
@@ -186,27 +270,64 @@ module.exports = async function adminItems(message, args = []) {
       return message.reply("❌ Boss ID or tier not found.");
     }
 
-    const inventory = player.inventory || [];
-    const givenItems = [];
+    const result = await db.runTransaction(async (transaction) => {
+      const playerDoc = await transaction.get(playerRef);
 
-    for (let i = 0; i < quantity; i++) {
-      const item = generateBossDrop(bossLevel, validQuality);
-
-      if (!item) {
-        return message.reply("❌ Failed to generate boss item. Check shop item levels.");
+      if (!playerDoc.exists) {
+        return {
+          ok: false,
+          message: "❌ Character not found.",
+        };
       }
 
-      addItemToInventory(inventory, item, 1);
-      givenItems.push(item);
+      const player = playerDoc.data();
+      const inventory = [...(player.inventory || [])];
+      const givenItems = [];
+
+      for (let i = 0; i < quantity; i++) {
+        const item = generateBossDrop(bossLevel, validQuality);
+
+        if (!item) {
+          return {
+            ok: false,
+            message:
+              "❌ Failed to generate boss item. Check shop item levels.",
+          };
+        }
+
+        addItemToInventory(inventory, item, 1);
+        givenItems.push(item);
+      }
+
+      transaction.update(playerRef, {
+        inventory,
+      });
+
+      return {
+        ok: true,
+        givenItems,
+      };
+    });
+
+    if (!result.ok) {
+      return message.reply(result.message || "❌ Give boss item failed.");
     }
 
-    await playerRef.update({ inventory });
+    const exampleItem = result.givenItems[0];
 
     return message.reply(
-      `✅ Gave **${quantity}x ${validQuality} boss item(s)** to ${target.username}.\n` +
-        `🎁 Example: **${givenItems[0].qualityEmoji} ${givenItems[0].name}**`
+      `✅ Gave **${quantity}x ${validQuality} boss item(s)** to ${target.username}.\n\n` +
+        `🎁 Example Roll: **${exampleItem.qualityEmoji} ${exampleItem.name}**\n` +
+        `🏷️ ID: \`${exampleItem.id}\`\n` +
+        `🔓 Level: **Lv.${exampleItem.requiredLevel || 1}**\n` +
+        `📊 Stats: ${formatItemStats(exampleItem)}`
     );
   }
 
-  return message.reply("❌ Unknown item admin command.");
+  return message.reply(
+    "❌ Unknown item admin command.\n\n" +
+      "Available:\n" +
+      "`!s admin giveitem @player <item_id> <Common/Rare/Legendary> <qty>`\n" +
+      "`!s admin givebossitem @player <boss_id/tier> <Rare/Legendary> <qty>`"
+  );
 };

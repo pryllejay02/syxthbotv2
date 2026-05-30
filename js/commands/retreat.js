@@ -1,16 +1,73 @@
 const { db } = require("../../firebase/firebase");
 
+const RETREAT_GOLD_PENALTY_PERCENT = 5; // 5% gold loss
+const MIN_RETREAT_PENALTY = 5;
+const MAX_RETREAT_PENALTY = 100;
+
 module.exports = async function retreatCommand(message) {
   const userId = message.author.id;
+
+  const playerRef = db.collection("players").doc(userId);
   const battleRef = db.collection("battles").doc(userId);
 
-  const battleDoc = await battleRef.get();
+  const result = await db.runTransaction(async (transaction) => {
+    const playerDoc = await transaction.get(playerRef);
+    const battleDoc = await transaction.get(battleRef);
 
-  if (!battleDoc.exists) {
-    return message.reply("You are not in battle.");
+    if (!playerDoc.exists) {
+      return {
+        ok: false,
+        message: "You don’t have a character yet. Use `!s start` first.",
+      };
+    }
+
+    if (!battleDoc.exists) {
+      return {
+        ok: false,
+        message: "You are not in battle.",
+      };
+    }
+
+    const player = playerDoc.data();
+    const battle = battleDoc.data();
+
+    const gold = Number(player.gold || 0);
+
+    const calculatedPenalty = Math.floor(
+      gold * (RETREAT_GOLD_PENALTY_PERCENT / 100)
+    );
+
+    const penalty = Math.min(
+      MAX_RETREAT_PENALTY,
+      Math.max(MIN_RETREAT_PENALTY, calculatedPenalty)
+    );
+
+    const actualPenalty = Math.min(gold, penalty);
+    const newGold = Math.max(0, gold - actualPenalty);
+
+    transaction.update(playerRef, {
+      gold: newGold,
+      retreats: Number(player.retreats || 0) + 1,
+    });
+
+    transaction.delete(battleRef);
+
+    return {
+      ok: true,
+      battle,
+      oldGold: gold,
+      newGold,
+      penalty: actualPenalty,
+    };
+  });
+
+  if (!result.ok) {
+    return message.reply(result.message || "❌ Retreat failed.");
   }
 
-  await battleRef.delete();
-
-  return message.reply("🏃 You retreated from the battle.");
+  return message.reply(
+    `🏃 You retreated from **${result.battle.monsterName}**.\n\n` +
+      `💰 Retreat Penalty: **${result.penalty} Gold**\n` +
+      `🪙 Remaining Gold: **${result.newGold}**`
+  );
 };

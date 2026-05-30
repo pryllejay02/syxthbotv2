@@ -44,11 +44,13 @@ async function autoReviveRaidPlayer(playerRef, userId, maxHp) {
   await playerRef.update({
     hp: 0,
     raidReviveAvailableAt: reviveAvailableAt,
+    updatedAt: new Date(),
   });
 
   setTimeout(async () => {
     try {
       const latestDoc = await playerRef.get();
+
       if (!latestDoc.exists) return;
 
       const latestPlayer = latestDoc.data();
@@ -57,14 +59,20 @@ async function autoReviveRaidPlayer(playerRef, userId, maxHp) {
         Number(latestPlayer.hp || 0) <= 0 &&
         Number(latestPlayer.raidReviveAvailableAt || 0) === reviveAvailableAt
       ) {
-        const revivedHp = Math.floor(Number(maxHp || 100) * 0.5);
+        const revivedHp = Math.max(
+          1,
+          Math.floor(Number(maxHp || 100) * 0.5)
+        );
 
         await playerRef.update({
           hp: revivedHp,
           raidReviveAvailableAt: null,
+          updatedAt: new Date(),
         });
 
-        console.log(`${latestPlayer.username || userId} auto revived from raid.`);
+        console.log(
+          `${latestPlayer.username || userId} auto revived from raid.`
+        );
       }
     } catch (error) {
       console.error("Raid auto revive error:", error);
@@ -95,7 +103,7 @@ async function getPlayerParty(userId) {
 }
 
 function formatRanking(ranking) {
-  if (ranking.length === 0) return "No damage recorded.";
+  if (!ranking.length) return "No damage recorded.";
 
   return ranking
     .map((entry) => {
@@ -138,6 +146,7 @@ async function distributeRewards(worldId, boss, ranking) {
 
     const result = await db.runTransaction(async (transaction) => {
       const playerDoc = await transaction.get(playerRef);
+
       if (!playerDoc.exists) return null;
 
       const player = playerDoc.data();
@@ -151,10 +160,16 @@ async function distributeRewards(worldId, boss, ranking) {
       // if the party disbands before boss death.
       const hasPartyBonus = !!entry.partyId;
 
-      const partyGoldBonus = hasPartyBonus ? bossConfig.partyBonus.gold / 100 : 0;
-      const partyExpBonus = hasPartyBonus ? bossConfig.partyBonus.exp / 100 : 0;
+      const partyGoldBonus = hasPartyBonus
+        ? Number(bossConfig.partyBonus.gold || 0) / 100
+        : 0;
+
+      const partyExpBonus = hasPartyBonus
+        ? Number(bossConfig.partyBonus.exp || 0) / 100
+        : 0;
+
       const partyLegendaryBonus = hasPartyBonus
-        ? bossConfig.partyBonus.legendaryChance
+        ? Number(bossConfig.partyBonus.legendaryChance || 0)
         : 0;
 
       const baseGold = Number(boss.rewards?.gold || 0);
@@ -174,9 +189,12 @@ async function distributeRewards(worldId, boss, ranking) {
 
       let legendaryChance = getLegendaryChanceByRank(entry.rank);
 
-      if (!penalty.legendaryAllowed) legendaryChance = 0;
+      if (!penalty.legendaryAllowed) {
+        legendaryChance = 0;
+      }
 
-      legendaryChance = legendaryChance * penalty.dropMultiplier + partyLegendaryBonus;
+      legendaryChance =
+        legendaryChance * penalty.dropMultiplier + partyLegendaryBonus;
 
       const rareChance =
         Number(bossConfig.participationRewards.rareChance || 0) *
@@ -193,13 +211,20 @@ async function distributeRewards(worldId, boss, ranking) {
         droppedItem = generateBossDrop(Number(boss.level || 1), "Rare");
       }
 
-      const inventory = player.inventory || [];
-      if (droppedItem) addItemToInventory(inventory, droppedItem);
+      const inventory = [...(player.inventory || [])];
+
+      if (droppedItem) {
+        addItemToInventory(inventory, droppedItem);
+      }
 
       const newGold = Number(player.gold || 0) + goldReward;
+
       const finalHp = levelResult.leveledUp
         ? totalStats.maxHp
-        : Number(player.hp || totalStats.maxHp);
+        : Math.min(
+            Number(player.hp || totalStats.maxHp),
+            Number(totalStats.maxHp || 100)
+          );
 
       transaction.update(playerRef, {
         level: levelResult.level,
@@ -213,6 +238,7 @@ async function distributeRewards(worldId, boss, ranking) {
         defense: totalStats.defense,
         dodge: totalStats.dodge,
         crit: totalStats.crit,
+        updatedAt: new Date(),
       });
 
       return {
@@ -233,7 +259,9 @@ async function distributeRewards(worldId, boss, ranking) {
         `🪙 Gold: ${result.goldReward}\n` +
         `⭐ EXP: ${result.expReward}\n` +
         `🎁 Drop: ${
-          result.droppedItem ? "\n" + formatDroppedItem(result.droppedItem) : "No item"
+          result.droppedItem
+            ? "\n" + formatDroppedItem(result.droppedItem)
+            : "No item"
         }\n` +
         `📉 Reward: ${result.penalty.label}${
           result.hasPartyBonus ? " + Party Bonus" : ""
@@ -252,10 +280,13 @@ module.exports = async function raidCommand(message, args = []) {
   const playerDoc = await playerRef.get();
 
   if (!playerDoc.exists) {
-    return message.reply("❌ You don’t have a character yet. Use `!s start` first.");
+    return message.reply(
+      "❌ You don’t have a character yet. Use `!s start` first."
+    );
   }
 
   let player = playerDoc.data();
+
   const reviveResult = await resolvePlayerRevive(playerRef, player);
   player = reviveResult.player;
 
@@ -299,7 +330,8 @@ module.exports = async function raidCommand(message, args = []) {
 
   if (subCommand !== "hit") {
     return message.reply(
-      "❌ Unknown raid command.\n\nUse:\n" +
+      "❌ Unknown raid command.\n\n" +
+        "Use:\n" +
         "`!s raid status`\n" +
         "`!s raid hit`"
     );
@@ -317,13 +349,20 @@ module.exports = async function raidCommand(message, args = []) {
     const bossDoc = await transaction.get(bossRef);
 
     if (!bossDoc.exists) {
-      return { error: "NO_BOSS" };
+      return {
+        error: "NO_BOSS",
+      };
     }
 
     const currentBoss = bossDoc.data();
 
-    if (currentBoss.status !== "active" || Number(currentBoss.hp || 0) <= 0) {
-      return { error: "NO_ACTIVE_BOSS" };
+    if (
+      currentBoss.status !== "active" ||
+      Number(currentBoss.hp || 0) <= 0
+    ) {
+      return {
+        error: "NO_ACTIVE_BOSS",
+      };
     }
 
     const damage = calculateDamage(player.attack, currentBoss.defense);
@@ -332,6 +371,7 @@ module.exports = async function raidCommand(message, args = []) {
 
     transaction.update(bossRef, {
       hp: newBossHp,
+      updatedAt: new Date(),
       ...(defeated
         ? {
             status: "defeated",
@@ -351,7 +391,10 @@ module.exports = async function raidCommand(message, args = []) {
     };
   });
 
-  if (hitResult.error === "NO_BOSS" || hitResult.error === "NO_ACTIVE_BOSS") {
+  if (
+    hitResult.error === "NO_BOSS" ||
+    hitResult.error === "NO_ACTIVE_BOSS"
+  ) {
     return message.reply("❌ No active world boss in this world right now.");
   }
 
@@ -398,10 +441,16 @@ module.exports = async function raidCommand(message, args = []) {
 
           if (dodged) {
             await message.channel.send(
-              `💨 **${targetPlayer.username || target.username}** dodged **${bossForHit.bossName}'s** attack!`
+              `💨 **${
+                targetPlayer.username || target.username
+              }** dodged **${bossForHit.bossName}'s** attack!`
             );
           } else {
-            const bossDamage = calculateBossDamage(bossForHit.attack, targetDefense);
+            const bossDamage = calculateBossDamage(
+              bossForHit.attack,
+              targetDefense
+            );
+
             const newTargetHp = Math.max(0, targetHp - bossDamage);
 
             if (newTargetHp <= 0) {
@@ -416,18 +465,25 @@ module.exports = async function raidCommand(message, args = []) {
                   targetPlayer.username || target.username
                 }**!\n` +
                   `💥 Damage: **${bossDamage}**\n` +
-                  `💀 **${targetPlayer.username || target.username}** was defeated!\n` +
+                  `💀 **${
+                    targetPlayer.username || target.username
+                  }** was defeated!\n` +
                   `⏳ Auto revive in **${reviveSeconds}s** with 50% HP.`
               );
             } else {
-              await targetRef.update({ hp: newTargetHp });
+              await targetRef.update({
+                hp: newTargetHp,
+                updatedAt: new Date(),
+              });
 
               await message.channel.send(
                 `👹 **${bossForHit.bossName}** attacked **${
                   targetPlayer.username || target.username
                 }**!\n` +
                   `💥 Damage: **${bossDamage}**\n` +
-                  `❤️ ${targetPlayer.username || target.username} HP: **${newTargetHp}/${targetMaxHp}**`
+                  `❤️ ${
+                    targetPlayer.username || target.username
+                  } HP: **${newTargetHp}/${targetMaxHp}**`
               );
             }
           }

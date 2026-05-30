@@ -5,11 +5,13 @@ const {
   generateBossDrop,
   addItemToInventory,
 } = require("../utils/bossLootSystem");
+const { resolvePlayerRevive } = require("../utils/reviveSystem");
 
 const {
   getActiveBoss,
   saveDamage,
   getDamageRanking,
+  getAllDamageRanking,
   deleteBossData,
   getRewardPenalty,
   rollChance,
@@ -47,7 +49,6 @@ async function autoReviveRaidPlayer(playerRef, userId, maxHp) {
   setTimeout(async () => {
     try {
       const latestDoc = await playerRef.get();
-
       if (!latestDoc.exists) return;
 
       const latestPlayer = latestDoc.data();
@@ -68,7 +69,7 @@ async function autoReviveRaidPlayer(playerRef, userId, maxHp) {
     } catch (error) {
       console.error("Raid auto revive error:", error);
     }
-  }, reviveSeconds * 1000);
+  }, reviveSeconds * 1000).unref?.();
 
   return reviveSeconds;
 }
@@ -94,9 +95,7 @@ async function getPlayerParty(userId) {
 }
 
 function formatRanking(ranking) {
-  if (ranking.length === 0) {
-    return "No damage recorded.";
-  }
+  if (ranking.length === 0) return "No damage recorded.";
 
   return ranking
     .map((entry) => {
@@ -136,103 +135,109 @@ async function distributeRewards(worldId, boss, ranking) {
 
   for (const entry of ranking) {
     const playerRef = db.collection("players").doc(entry.userId);
-    const playerDoc = await playerRef.get();
 
-    if (!playerDoc.exists) continue;
+    const result = await db.runTransaction(async (transaction) => {
+      const playerDoc = await transaction.get(playerRef);
+      if (!playerDoc.exists) return null;
 
-    const player = playerDoc.data();
+      const player = playerDoc.data();
 
-    const penalty = getRewardPenalty(
-      Number(player.level || 1),
-      Number(boss.level || 1)
-    );
+      const penalty = getRewardPenalty(
+        Number(player.level || 1),
+        Number(boss.level || 1)
+      );
 
-    const party = await getPlayerParty(entry.userId);
-    const hasPartyBonus = !!party;
+      // Use saved partyId from the damage record so players do not lose party bonus
+      // if the party disbands before boss death.
+      const hasPartyBonus = !!entry.partyId;
 
-    const partyGoldBonus = hasPartyBonus ? bossConfig.partyBonus.gold / 100 : 0;
-    const partyExpBonus = hasPartyBonus ? bossConfig.partyBonus.exp / 100 : 0;
-    const partyLegendaryBonus = hasPartyBonus
-      ? bossConfig.partyBonus.legendaryChance
-      : 0;
+      const partyGoldBonus = hasPartyBonus ? bossConfig.partyBonus.gold / 100 : 0;
+      const partyExpBonus = hasPartyBonus ? bossConfig.partyBonus.exp / 100 : 0;
+      const partyLegendaryBonus = hasPartyBonus
+        ? bossConfig.partyBonus.legendaryChance
+        : 0;
 
-    const baseGold = Number(boss.rewards?.gold || 0);
-    const baseExp = Number(boss.rewards?.exp || 0);
+      const baseGold = Number(boss.rewards?.gold || 0);
+      const baseExp = Number(boss.rewards?.exp || 0);
 
-    const goldReward = Math.floor(
-      baseGold * penalty.goldMultiplier * (1 + partyGoldBonus)
-    );
+      const goldReward = Math.floor(
+        baseGold * penalty.goldMultiplier * (1 + partyGoldBonus)
+      );
 
-    const expReward = Math.floor(
-      baseExp * penalty.expMultiplier * (1 + partyExpBonus)
-    );
+      const expReward = Math.floor(
+        baseExp * penalty.expMultiplier * (1 + partyExpBonus)
+      );
 
-    const levelResult = applyLevelUp(player, expReward);
+      const levelResult = applyLevelUp(player, expReward);
+      const equipment = player.equipment || {};
+      const totalStats = calculateTotalStats(levelResult.baseStats, equipment);
 
-    const equipment = player.equipment || {};
-    const totalStats = calculateTotalStats(levelResult.baseStats, equipment);
+      let legendaryChance = getLegendaryChanceByRank(entry.rank);
 
-    let legendaryChance = getLegendaryChanceByRank(entry.rank);
+      if (!penalty.legendaryAllowed) legendaryChance = 0;
 
-    if (!penalty.legendaryAllowed) {
-      legendaryChance = 0;
-    }
+      legendaryChance = legendaryChance * penalty.dropMultiplier + partyLegendaryBonus;
 
-    legendaryChance =
-      legendaryChance * penalty.dropMultiplier + partyLegendaryBonus;
+      const rareChance =
+        Number(bossConfig.participationRewards.rareChance || 0) *
+        penalty.dropMultiplier;
 
-    const rareChance =
-      Number(bossConfig.participationRewards.rareChance || 0) *
-      penalty.dropMultiplier;
+      const gotLegendary = rollChance(legendaryChance);
+      const gotRare = !gotLegendary && rollChance(rareChance);
 
-    const gotLegendary = rollChance(legendaryChance);
-    const gotRare = !gotLegendary && rollChance(rareChance);
+      let droppedItem = null;
 
-    let droppedItem = null;
+      if (gotLegendary) {
+        droppedItem = generateBossDrop(Number(boss.level || 1), "Legendary");
+      } else if (gotRare) {
+        droppedItem = generateBossDrop(Number(boss.level || 1), "Rare");
+      }
 
-    if (gotLegendary) {
-      droppedItem = generateBossDrop(Number(boss.level || 1), "Legendary");
-    } else if (gotRare) {
-      droppedItem = generateBossDrop(Number(boss.level || 1), "Rare");
-    }
+      const inventory = player.inventory || [];
+      if (droppedItem) addItemToInventory(inventory, droppedItem);
 
-    const inventory = player.inventory || [];
+      const newGold = Number(player.gold || 0) + goldReward;
+      const finalHp = levelResult.leveledUp
+        ? totalStats.maxHp
+        : Number(player.hp || totalStats.maxHp);
 
-    if (droppedItem) {
-      addItemToInventory(inventory, droppedItem);
-    }
+      transaction.update(playerRef, {
+        level: levelResult.level,
+        exp: levelResult.exp,
+        gold: newGold,
+        inventory,
+        baseStats: levelResult.baseStats,
+        hp: finalHp,
+        maxHp: totalStats.maxHp,
+        attack: totalStats.attack,
+        defense: totalStats.defense,
+        dodge: totalStats.dodge,
+        crit: totalStats.crit,
+      });
 
-    const newGold = Number(player.gold || 0) + goldReward;
-
-    const finalHp = levelResult.leveledUp
-      ? totalStats.maxHp
-      : Number(player.hp || totalStats.maxHp);
-
-    await playerRef.update({
-      level: levelResult.level,
-      exp: levelResult.exp,
-      gold: newGold,
-      inventory,
-
-      baseStats: levelResult.baseStats,
-
-      hp: finalHp,
-      maxHp: totalStats.maxHp,
-      attack: totalStats.attack,
-      defense: totalStats.defense,
-      dodge: totalStats.dodge,
-      crit: totalStats.crit,
+      return {
+        player,
+        penalty,
+        hasPartyBonus,
+        goldReward,
+        expReward,
+        droppedItem,
+      };
     });
+
+    if (!result) continue;
 
     rewardLines.push(
       `#${entry.rank} **${entry.username}**\n` +
         `💥 Damage: ${entry.damage}\n` +
-        `🪙 Gold: ${goldReward}\n` +
-        `⭐ EXP: ${expReward}\n` +
+        `🪙 Gold: ${result.goldReward}\n` +
+        `⭐ EXP: ${result.expReward}\n` +
         `🎁 Drop: ${
-          droppedItem ? "\n" + formatDroppedItem(droppedItem) : "No item"
+          result.droppedItem ? "\n" + formatDroppedItem(result.droppedItem) : "No item"
         }\n` +
-        `📉 Reward: ${penalty.label}${hasPartyBonus ? " + Party Bonus" : ""}`
+        `📉 Reward: ${result.penalty.label}${
+          result.hasPartyBonus ? " + Party Bonus" : ""
+        }`
     );
   }
 
@@ -250,7 +255,10 @@ module.exports = async function raidCommand(message, args = []) {
     return message.reply("❌ You don’t have a character yet. Use `!s start` first.");
   }
 
-  const player = playerDoc.data();
+  let player = playerDoc.data();
+  const reviveResult = await resolvePlayerRevive(playerRef, player);
+  player = reviveResult.player;
+
   const worldId = player.world?.id;
 
   if (!worldId) {
@@ -297,18 +305,59 @@ module.exports = async function raidCommand(message, args = []) {
     );
   }
 
-  if (!boss || boss.status !== "active") {
-    return message.reply("❌ No active world boss in this world right now.");
-  }
-
   if (Number(player.hp || 0) <= 0) {
     return message.reply(
       "💀 You are defeated. Wait for raid revive or use `!s rest` before attacking again."
     );
   }
 
-  const damage = calculateDamage(player.attack, boss.defense);
-  const newBossHp = Math.max(0, Number(boss.hp || 0) - damage);
+  const bossRef = db.collection("worldBosses").doc(worldId);
+
+  const hitResult = await db.runTransaction(async (transaction) => {
+    const bossDoc = await transaction.get(bossRef);
+
+    if (!bossDoc.exists) {
+      return { error: "NO_BOSS" };
+    }
+
+    const currentBoss = bossDoc.data();
+
+    if (currentBoss.status !== "active" || Number(currentBoss.hp || 0) <= 0) {
+      return { error: "NO_ACTIVE_BOSS" };
+    }
+
+    const damage = calculateDamage(player.attack, currentBoss.defense);
+    const newBossHp = Math.max(0, Number(currentBoss.hp || 0) - damage);
+    const defeated = newBossHp <= 0;
+
+    transaction.update(bossRef, {
+      hp: newBossHp,
+      ...(defeated
+        ? {
+            status: "defeated",
+            defeatedAt: new Date(),
+          }
+        : {}),
+    });
+
+    return {
+      boss: {
+        id: bossDoc.id,
+        ...currentBoss,
+      },
+      damage,
+      newBossHp,
+      defeated,
+    };
+  });
+
+  if (hitResult.error === "NO_BOSS" || hitResult.error === "NO_ACTIVE_BOSS") {
+    return message.reply("❌ No active world boss in this world right now.");
+  }
+
+  const bossForHit = hitResult.boss;
+  const damage = hitResult.damage;
+  const newBossHp = hitResult.newBossHp;
 
   const party = await getPlayerParty(userId);
   const threatGain = calculateThreatGain(player, damage);
@@ -324,15 +373,11 @@ module.exports = async function raidCommand(message, args = []) {
     threatGain
   );
 
-  await db.collection("worldBosses").doc(worldId).update({
-    hp: newBossHp,
-  });
-
   if (newBossHp > 0) {
     await message.reply(
-      `⚔️ You hit **${boss.bossName}** for **${damage}** damage!\n` +
+      `⚔️ You hit **${bossForHit.bossName}** for **${damage}** damage!\n` +
         `🔥 Threat Gained: **${threatGain}**\n` +
-        `❤️ Boss HP: **${newBossHp}/${boss.maxHp}**`
+        `❤️ Boss HP: **${newBossHp}/${bossForHit.maxHp}**`
     );
 
     const target = await pickBossTarget(worldId);
@@ -343,7 +388,6 @@ module.exports = async function raidCommand(message, args = []) {
 
       if (targetDoc.exists) {
         const targetPlayer = targetDoc.data();
-
         const targetHp = Number(targetPlayer.hp || 0);
         const targetMaxHp = Number(targetPlayer.maxHp || 100);
         const targetDefense = Number(targetPlayer.defense || 0);
@@ -354,14 +398,10 @@ module.exports = async function raidCommand(message, args = []) {
 
           if (dodged) {
             await message.channel.send(
-              `💨 **${targetPlayer.username || target.username}** dodged **${boss.bossName}'s** attack!`
+              `💨 **${targetPlayer.username || target.username}** dodged **${bossForHit.bossName}'s** attack!`
             );
           } else {
-            const bossDamage = calculateBossDamage(
-              boss.attack,
-              targetDefense
-            );
-
+            const bossDamage = calculateBossDamage(bossForHit.attack, targetDefense);
             const newTargetHp = Math.max(0, targetHp - bossDamage);
 
             if (newTargetHp <= 0) {
@@ -372,18 +412,20 @@ module.exports = async function raidCommand(message, args = []) {
               );
 
               await message.channel.send(
-                `👹 **${boss.bossName}** attacked **${targetPlayer.username || target.username}**!\n` +
+                `👹 **${bossForHit.bossName}** attacked **${
+                  targetPlayer.username || target.username
+                }**!\n` +
                   `💥 Damage: **${bossDamage}**\n` +
                   `💀 **${targetPlayer.username || target.username}** was defeated!\n` +
                   `⏳ Auto revive in **${reviveSeconds}s** with 50% HP.`
               );
             } else {
-              await targetRef.update({
-                hp: newTargetHp,
-              });
+              await targetRef.update({ hp: newTargetHp });
 
               await message.channel.send(
-                `👹 **${boss.bossName}** attacked **${targetPlayer.username || target.username}**!\n` +
+                `👹 **${bossForHit.bossName}** attacked **${
+                  targetPlayer.username || target.username
+                }**!\n` +
                   `💥 Damage: **${bossDamage}**\n` +
                   `❤️ ${targetPlayer.username || target.username} HP: **${newTargetHp}/${targetMaxHp}**`
               );
@@ -396,29 +438,24 @@ module.exports = async function raidCommand(message, args = []) {
     return;
   }
 
-  await db.collection("worldBosses").doc(worldId).update({
-    hp: 0,
-    status: "defeated",
-    defeatedAt: new Date(),
-  });
-
-  const ranking = await getDamageRanking(worldId, 10);
-  const rankingText = formatRanking(ranking);
-  const rewardText = await distributeRewards(worldId, boss, ranking);
+  const topRanking = await getDamageRanking(worldId, 10);
+  const allRanking = await getAllDamageRanking(worldId);
+  const rankingText = formatRanking(topRanking);
+  const rewardText = await distributeRewards(worldId, bossForHit, allRanking);
 
   await message.channel.send(
-    `👹 **${boss.bossName} HAS BEEN DEFEATED!**\n\n` +
+    `👹 **${bossForHit.bossName} HAS BEEN DEFEATED!**\n\n` +
       `🏆 **Final Damage Ranking**\n` +
       `${rankingText}\n\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
       `🎁 **Rewards Distributed**\n\n` +
-      `${rewardText}\n\n` +
+      `${rewardText || "No valid participants."}\n\n` +
       `⏳ Boss ranking data will be deleted in **10 minutes**.`
   );
 
   setTimeout(async () => {
     await deleteBossData(worldId);
-  }, Number(bossConfig.rankingDeleteMinutes || 10) * 60 * 1000);
+  }, Number(bossConfig.rankingDeleteMinutes || 10) * 60 * 1000).unref?.();
 
   return null;
 };

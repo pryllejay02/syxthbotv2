@@ -7,6 +7,12 @@ const { db } = require("../../firebase/firebase");
 const autoPlayers = new Map();
 
 module.exports = async function autoplay(message, args = []) {
+  // Auto Hunt is controlled by .env
+  // Works in production only if AUTO_HUNT_ENABLED=true
+  if (process.env.AUTO_HUNT_ENABLED !== "true") {
+    return message.reply("❌ Auto Hunt is disabled.");
+  }
+
   if (!isCreator(message.member)) {
     return message.reply("❌ Creator only.");
   }

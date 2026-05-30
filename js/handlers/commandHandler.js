@@ -24,6 +24,38 @@ const flexCommand = require("../commands/flex");
 const adminCommand = require("../commands/admin");
 const creatorAutoCommand = require("../admin/autoplay");
 
+const { checkCooldown, formatCooldown } = require("../utils/cooldownSystem");
+const { resolvePlayerRevive } = require("../utils/reviveSystem");
+
+const COMMAND_COOLDOWNS = {
+  hunt: 3000,
+  hit: 1800,
+  rest: 3000,
+  buy: 1500,
+  sell: 1500,
+  use: 1500,
+  equip: 1500,
+  unequip: 1500,
+  inventory: 2500,
+  inv: 2500,
+  profile: 2500,
+  character: 2500,
+  char: 2500,
+  leaderboard: 5000,
+  lb: 5000,
+  flex: 3000,
+  trade: 1500,
+  party: 1500,
+  raid: 2500,
+};
+
+function getCooldownAction(command, args) {
+  if (command === "raid") return `raid:${String(args[0] || "status").toLowerCase()}`;
+  if (command === "trade") return `trade:${String(args[0] || "invite").toLowerCase()}`;
+  if (command === "party") return `party:${String(args[0] || "help").toLowerCase()}`;
+  return command;
+}
+
 module.exports = async function commandHandler(client, message, prefix) {
   try {
     if (message.author.bot) return;
@@ -31,6 +63,8 @@ module.exports = async function commandHandler(client, message, prefix) {
 
     const args = message.content.slice(prefix.length).trim().split(/ +/);
     const command = args.shift()?.toLowerCase();
+
+    if (!command) return;
 
     if (command === "ping") {
       const sent = await message.reply("🏓 Checking ping...");
@@ -82,6 +116,25 @@ module.exports = async function commandHandler(client, message, prefix) {
       if (message.channel.id !== privateChannelId) {
         return message.reply(
           `❌ Please use your MMORPG commands inside your private room: <#${privateChannelId}>`
+        );
+      }
+
+      // Recover players whose revive timer became ready while the bot was offline/restarted.
+      await resolvePlayerRevive(playerRef, player);
+    }
+
+    const cooldownMs = COMMAND_COOLDOWNS[command] || 0;
+
+    if (cooldownMs > 0) {
+      const cooldown = checkCooldown(
+        message.author.id,
+        getCooldownAction(command, args),
+        cooldownMs
+      );
+
+      if (!cooldown.allowed) {
+        return message.reply(
+          `⏳ Please wait **${formatCooldown(cooldown.remainingMs)}** before using this again.`
         );
       }
     }

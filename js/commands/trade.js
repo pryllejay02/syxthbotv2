@@ -101,144 +101,184 @@ async function resetTradeToActive(tradeRef) {
 
 async function completeTrade(message, trade) {
   const tradeRef = db.collection("trades").doc(trade.id);
+  const player1Ref = db.collection("players").doc(trade.player1Id);
+  const player2Ref = db.collection("players").doc(trade.player2Id);
 
-  const latestTradeDoc = await tradeRef.get();
-
-  if (!latestTradeDoc.exists) {
-    return message.reply("❌ This trade no longer exists.");
-  }
-
-  const latestTrade = {
-    id: latestTradeDoc.id,
-    ...latestTradeDoc.data(),
+  const resetPayload = {
+    status: "active",
+    player1Confirmed: false,
+    player2Confirmed: false,
   };
 
-  if (latestTrade.status === "completed") {
-    return message.reply("❌ This trade is already completed.");
-  }
+  const result = await db.runTransaction(async (transaction) => {
+    // IMPORTANT: Firestore transactions must finish all reads before writes.
+    const latestTradeDoc = await transaction.get(tradeRef);
+    const player1Doc = await transaction.get(player1Ref);
+    const player2Doc = await transaction.get(player2Ref);
 
-  if (latestTrade.status === "processing") {
-    return message.reply("⏳ Trade is already processing.");
-  }
+    if (!latestTradeDoc.exists) {
+      return {
+        ok: false,
+        message: "❌ This trade no longer exists.",
+      };
+    }
 
-  await tradeRef.update({
-    status: "processing",
+    const latestTrade = {
+      id: latestTradeDoc.id,
+      ...latestTradeDoc.data(),
+    };
+
+    if (latestTrade.status === "completed") {
+      return {
+        ok: false,
+        message: "❌ This trade is already completed.",
+      };
+    }
+
+    if (latestTrade.status === "processing") {
+      return {
+        ok: false,
+        message: "⏳ Trade is already processing.",
+      };
+    }
+
+    if (latestTrade.status !== "active") {
+      return {
+        ok: false,
+        message: "❌ This trade is not active.",
+      };
+    }
+
+    if (!latestTrade.player1Confirmed || !latestTrade.player2Confirmed) {
+      return {
+        ok: false,
+        message: "❌ Both players must confirm before the trade can complete.",
+      };
+    }
+
+    if (!player1Doc.exists || !player2Doc.exists) {
+      transaction.update(tradeRef, resetPayload);
+
+      return {
+        ok: false,
+        message: "❌ One of the players no longer has a character. Confirmations reset.",
+      };
+    }
+
+    const player1 = player1Doc.data();
+    const player2 = player2Doc.data();
+
+    const p1Inventory = [...(player1.inventory || [])];
+    const p2Inventory = [...(player2.inventory || [])];
+
+    const p1Gold = Number(player1.gold || 0);
+    const p2Gold = Number(player2.gold || 0);
+
+    if (p1Gold < Number(latestTrade.player1Gold || 0)) {
+      transaction.update(tradeRef, resetPayload);
+
+      return {
+        ok: false,
+        message: "❌ Player 1 does not have enough gold anymore. Confirmations reset.",
+      };
+    }
+
+    if (p2Gold < Number(latestTrade.player2Gold || 0)) {
+      transaction.update(tradeRef, resetPayload);
+
+      return {
+        ok: false,
+        message: "❌ Player 2 does not have enough gold anymore. Confirmations reset.",
+      };
+    }
+
+    if (!hasEnoughInventory(p1Inventory, latestTrade.player1Items || [])) {
+      transaction.update(tradeRef, resetPayload);
+
+      return {
+        ok: false,
+        message: "❌ Player 1 no longer has the required item(s). Confirmations reset.",
+      };
+    }
+
+    if (!hasEnoughInventory(p2Inventory, latestTrade.player2Items || [])) {
+      transaction.update(tradeRef, resetPayload);
+
+      return {
+        ok: false,
+        message: "❌ Player 2 no longer has the required item(s). Confirmations reset.",
+      };
+    }
+
+    if (hasEquippedTradeItem(player1, latestTrade.player1Items || [])) {
+      transaction.update(tradeRef, resetPayload);
+
+      return {
+        ok: false,
+        message: "❌ Player 1 has a trade item equipped. Unequip it first. Confirmations reset.",
+      };
+    }
+
+    if (hasEquippedTradeItem(player2, latestTrade.player2Items || [])) {
+      transaction.update(tradeRef, resetPayload);
+
+      return {
+        ok: false,
+        message: "❌ Player 2 has a trade item equipped. Unequip it first. Confirmations reset.",
+      };
+    }
+
+    for (const item of latestTrade.player1Items || []) {
+      removeItemFromInventory(p1Inventory, item.id, Number(item.quantity || 1));
+      addItemToInventory(p2Inventory, item);
+    }
+
+    for (const item of latestTrade.player2Items || []) {
+      removeItemFromInventory(p2Inventory, item.id, Number(item.quantity || 1));
+      addItemToInventory(p1Inventory, item);
+    }
+
+    transaction.update(player1Ref, {
+      inventory: p1Inventory,
+      gold:
+        p1Gold -
+        Number(latestTrade.player1Gold || 0) +
+        Number(latestTrade.player2Gold || 0),
+    });
+
+    transaction.update(player2Ref, {
+      inventory: p2Inventory,
+      gold:
+        p2Gold -
+        Number(latestTrade.player2Gold || 0) +
+        Number(latestTrade.player1Gold || 0),
+    });
+
+    transaction.delete(tradeRef);
+
+    return {
+      ok: true,
+      trade: latestTrade,
+    };
   });
 
-  const player1Ref = db.collection("players").doc(latestTrade.player1Id);
-  const player2Ref = db.collection("players").doc(latestTrade.player2Id);
-
-  const player1Doc = await player1Ref.get();
-  const player2Doc = await player2Ref.get();
-
-  if (!player1Doc.exists || !player2Doc.exists) {
-    await resetTradeToActive(tradeRef);
-    return message.reply("❌ One of the players no longer has a character.");
+  if (!result.ok) {
+    return message.reply(result.message || "❌ Trade failed.");
   }
-
-  const player1 = player1Doc.data();
-  const player2 = player2Doc.data();
-
-  const p1Inventory = player1.inventory || [];
-  const p2Inventory = player2.inventory || [];
-
-  const p1Gold = Number(player1.gold || 0);
-  const p2Gold = Number(player2.gold || 0);
-
-  if (p1Gold < Number(latestTrade.player1Gold || 0)) {
-    await resetTradeToActive(tradeRef);
-    return message.reply(
-      "❌ Player 1 does not have enough gold anymore. Confirmations reset."
-    );
-  }
-
-  if (p2Gold < Number(latestTrade.player2Gold || 0)) {
-    await resetTradeToActive(tradeRef);
-    return message.reply(
-      "❌ Player 2 does not have enough gold anymore. Confirmations reset."
-    );
-  }
-
-  if (!hasEnoughInventory(p1Inventory, latestTrade.player1Items || [])) {
-    await resetTradeToActive(tradeRef);
-    return message.reply(
-      "❌ Player 1 no longer has the required item(s). Confirmations reset."
-    );
-  }
-
-  if (!hasEnoughInventory(p2Inventory, latestTrade.player2Items || [])) {
-    await resetTradeToActive(tradeRef);
-    return message.reply(
-      "❌ Player 2 no longer has the required item(s). Confirmations reset."
-    );
-  }
-
-  if (hasEquippedTradeItem(player1, latestTrade.player1Items || [])) {
-    await resetTradeToActive(tradeRef);
-    return message.reply(
-      "❌ Player 1 has a trade item equipped. Unequip it first. Confirmations reset."
-    );
-  }
-
-  if (hasEquippedTradeItem(player2, latestTrade.player2Items || [])) {
-    await resetTradeToActive(tradeRef);
-    return message.reply(
-      "❌ Player 2 has a trade item equipped. Unequip it first. Confirmations reset."
-    );
-  }
-
-  for (const item of latestTrade.player1Items || []) {
-    removeItemFromInventory(
-      p1Inventory,
-      item.id,
-      Number(item.quantity || 1)
-    );
-
-    addItemToInventory(p2Inventory, item);
-  }
-
-  for (const item of latestTrade.player2Items || []) {
-    removeItemFromInventory(
-      p2Inventory,
-      item.id,
-      Number(item.quantity || 1)
-    );
-
-    addItemToInventory(p1Inventory, item);
-  }
-
-  await player1Ref.update({
-    inventory: p1Inventory,
-    gold:
-      p1Gold -
-      Number(latestTrade.player1Gold || 0) +
-      Number(latestTrade.player2Gold || 0),
-  });
-
-  await player2Ref.update({
-    inventory: p2Inventory,
-    gold:
-      p2Gold -
-      Number(latestTrade.player2Gold || 0) +
-      Number(latestTrade.player1Gold || 0),
-  });
-
-  await tradeRef.update({
-    status: "completed",
-    completedAt: new Date(),
-  });
-
-  await tradeRef.delete();
 
   await message.channel.send(
-    `🎉 **TRADE COMPLETED!**\n\n` +
-      `<@${latestTrade.player1Id}> and <@${latestTrade.player2Id}> successfully traded.\n\n` +
+    `🎉 **TRADE COMPLETED!**
+
+` +
+      `<@${result.trade.player1Id}> and <@${result.trade.player2Id}> successfully traded.
+
+` +
       `This trade room will be deleted shortly.`
   );
 
   setTimeout(async () => {
-    await deleteTradeChannel(message.guild, latestTrade.channelId);
-  }, tradeConfig.deleteChannelDelayMs);
+    await deleteTradeChannel(message.guild, result.trade.channelId);
+  }, tradeConfig.deleteChannelDelayMs).unref?.();
 }
 
 module.exports = async function tradeCommand(message, args = []) {
@@ -533,22 +573,71 @@ module.exports = async function tradeCommand(message, args = []) {
   }
 
   if (subCommand === "confirm") {
-    const updatedTrade = {
-      ...activeTrade,
-      [side.confirmKey]: true,
-    };
+    const tradeRef = db.collection("trades").doc(activeTrade.id);
 
-    await db.collection("trades").doc(activeTrade.id).update({
-      [side.confirmKey]: true,
+    const confirmResult = await db.runTransaction(async (transaction) => {
+      const tradeDoc = await transaction.get(tradeRef);
+
+      if (!tradeDoc.exists) {
+        return {
+          ok: false,
+          message: "❌ This trade no longer exists.",
+        };
+      }
+
+      const latestTrade = {
+        id: tradeDoc.id,
+        ...tradeDoc.data(),
+      };
+
+      if (latestTrade.status !== "active") {
+        return {
+          ok: false,
+          message: "❌ This trade is no longer active.",
+        };
+      }
+
+      const latestSide = getTradeSide(latestTrade, userId);
+
+      if (!latestSide) {
+        return {
+          ok: false,
+          message: "❌ You are not part of this trade.",
+        };
+      }
+
+      const updatedTrade = {
+        ...latestTrade,
+        [latestSide.confirmKey]: true,
+      };
+
+      transaction.update(tradeRef, {
+        [latestSide.confirmKey]: true,
+      });
+
+      return {
+        ok: true,
+        trade: updatedTrade,
+        bothConfirmed:
+          updatedTrade.player1Confirmed && updatedTrade.player2Confirmed,
+      };
     });
 
-    if (updatedTrade.player1Confirmed && updatedTrade.player2Confirmed) {
-      return completeTrade(message, updatedTrade);
+    if (!confirmResult.ok) {
+      return message.reply(confirmResult.message || "❌ Trade confirmation failed.");
+    }
+
+    if (confirmResult.bothConfirmed) {
+      return completeTrade(message, confirmResult.trade);
     }
 
     return message.reply(
-      `✅ You confirmed the trade.\n\nWaiting for the other player.\n\n` +
-        formatTradeWindow(updatedTrade)
+      `✅ You confirmed the trade.
+
+Waiting for the other player.
+
+` +
+        formatTradeWindow(confirmResult.trade)
     );
   }
 

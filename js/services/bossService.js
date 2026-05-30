@@ -8,7 +8,6 @@ const {
 const bossConfig = require("../data/bossConfig");
 const partyConfig = require("../data/partyConfig");
 
-
 function getRandomBossByTier(tier) {
   const bosses = bossConfig.bosses[tier] || [];
 
@@ -38,22 +37,22 @@ async function spawnBoss(client, worldId, tier) {
 
   const existingBoss = await getActiveBoss(worldId);
 
-if (existingBoss && existingBoss.status === "active") {
-  const spawnedAt = existingBoss.spawnedAt?.toDate
-    ? existingBoss.spawnedAt.toDate()
-    : new Date(existingBoss.spawnedAt);
+  if (existingBoss && existingBoss.status === "active") {
+    const spawnedAt = existingBoss.spawnedAt?.toDate
+      ? existingBoss.spawnedAt.toDate()
+      : new Date(existingBoss.spawnedAt);
 
-  const expireMinutes = Number(bossConfig.bossExpireMinutes || 120);
-  const expiresAt = spawnedAt.getTime() + expireMinutes * 60 * 1000;
+    const expireMinutes = Number(bossConfig.bossExpireMinutes || 120);
+    const expiresAt = spawnedAt.getTime() + expireMinutes * 60 * 1000;
 
-  if (Date.now() < expiresAt) {
-    console.log(`Boss already active in ${worldId}`);
-    return existingBoss;
+    if (Date.now() < expiresAt) {
+      console.log(`Boss already active in ${worldId}`);
+      return existingBoss;
+    }
+
+    console.log(`Boss expired in ${worldId}. Clearing old boss...`);
+    await deleteBossData(worldId);
   }
-
-  console.log(`Boss expired in ${worldId}. Clearing old boss...`);
-  await deleteBossData(worldId);
-}
 
   const boss = getRandomBossByTier(tier);
 
@@ -88,64 +87,31 @@ if (existingBoss && existingBoss.status === "active") {
     .catch(() => null);
 
   if (channel) {
+    const bossImage = boss.image ? new AttachmentBuilder(boss.image) : null;
 
-  const bossImage =
-    boss.image
-      ? new AttachmentBuilder(
-          boss.image
-        )
-      : null;
-
-  const embed =
-    new EmbedBuilder()
-
+    const embed = new EmbedBuilder()
       .setColor("#8B0000")
-
-      .setTitle(
-        `👹 ${boss.name} Appeared!`
-      )
-
+      .setTitle(`👹 ${boss.name} Appeared!`)
       .setDescription(
-
-`🌍 World: **${worldId}**
-
-⭐ Level: **Lv.${boss.level}**
-📌 Recommended: **Lv.${boss.recommendedLevel.min}-${boss.recommendedLevel.max}**
-
-❤️ HP: **${boss.hp}/${boss.hp}**
-⚔️ Attack: **${boss.attack}**
-🛡️ Defense: **${boss.defense}**
-
-⚠️ RAID BOSS ACTIVE
-
-Use \`!s raid hit\`
-Use \`!s raid status\``
-
+        `🌍 World: **${worldId}**\n\n` +
+          `⭐ Level: **Lv.${boss.level}**\n` +
+          `📌 Recommended: **Lv.${boss.recommendedLevel.min}-${boss.recommendedLevel.max}**\n\n` +
+          `❤️ HP: **${boss.hp}/${boss.hp}**\n` +
+          `⚔️ Attack: **${boss.attack}**\n` +
+          `🛡️ Defense: **${boss.defense}**\n\n` +
+          `⚠️ RAID BOSS ACTIVE\n\n` +
+          `Use \`!s raid hit\`\n` +
+          `Use \`!s raid status\``
       )
+      .setFooter({ text: "Syxth Boss Raid" });
 
-      .setFooter({
-        text: "Syxth Boss Raid"
-      });
-
-  if (bossImage) {
-
-    embed.setImage(
-      `attachment://${bossImage.name}`
-    );
-
-    await channel.send({
-      embeds: [embed],
-      files: [bossImage],
-    });
-
-  } else {
-
-    await channel.send({
-      embeds: [embed],
-    });
-
+    if (bossImage) {
+      embed.setImage(`attachment://${bossImage.name}`);
+      await channel.send({ embeds: [embed], files: [bossImage] });
+    } else {
+      await channel.send({ embeds: [embed] });
+    }
   }
-}
 
   return bossData;
 }
@@ -156,51 +122,42 @@ function calculateThreatGain(player, damage) {
 
   const tankerBonus = classId === "tanker" ? 300 : 0;
 
-  return Math.floor(
-    Number(damage || 0) +
-      defense * 0.5 +
-      tankerBonus
-  );
+  return Math.floor(Number(damage || 0) + defense * 0.5 + tankerBonus);
 }
 
-async function saveDamage(
-  worldId,
-  player,
-  damage,
-  partyId = null,
-  threatGain = 0
-) {
+async function saveDamage(worldId, player, damage, partyId = null, threatGain = 0) {
   const damageRef = db
     .collection("worldBosses")
     .doc(worldId)
     .collection("damage")
     .doc(player.userId);
 
-  const damageDoc = await damageRef.get();
+  await db.runTransaction(async (transaction) => {
+    const damageDoc = await transaction.get(damageRef);
 
-  if (!damageDoc.exists) {
-    await damageRef.set({
-      userId: player.userId,
-      username: player.username || "Unknown",
-      damage,
-      hits: 1,
-      partyId,
-      threat: Number(threatGain || 0),
+    if (!damageDoc.exists) {
+      transaction.set(damageRef, {
+        userId: player.userId,
+        username: player.username || "Unknown",
+        damage: Number(damage || 0),
+        hits: 1,
+        partyId,
+        threat: Number(threatGain || 0),
+        lastHitAt: new Date(),
+      });
+      return;
+    }
+
+    const oldData = damageDoc.data();
+
+    transaction.update(damageRef, {
+      username: player.username || oldData.username || "Unknown",
+      damage: Number(oldData.damage || 0) + Number(damage || 0),
+      hits: Number(oldData.hits || 0) + 1,
+      partyId: partyId || oldData.partyId || null,
+      threat: Number(oldData.threat || 0) + Number(threatGain || 0),
       lastHitAt: new Date(),
     });
-
-    return;
-  }
-
-  const oldData = damageDoc.data();
-
-  await damageRef.update({
-    username: player.username || oldData.username || "Unknown",
-    damage: Number(oldData.damage || 0) + damage,
-    hits: Number(oldData.hits || 0) + 1,
-    partyId: partyId || oldData.partyId || null,
-    threat: Number(oldData.threat || 0) + Number(threatGain || 0),
-    lastHitAt: new Date(),
   });
 }
 
@@ -212,10 +169,7 @@ async function pickBossTarget(worldId) {
     .get();
 
   const participants = snapshot.docs
-    .map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }))
+    .map((doc) => ({ id: doc.id, ...doc.data() }))
     .filter((entry) => Number(entry.threat || 0) > 0);
 
   if (participants.length === 0) return null;
@@ -232,22 +186,22 @@ async function pickBossTarget(worldId) {
   for (const entry of participants) {
     roll -= Number(entry.threat || 0);
 
-    if (roll <= 0) {
-      return entry;
-    }
+    if (roll <= 0) return entry;
   }
 
   return participants[0];
 }
 
 async function getDamageRanking(worldId, limit = 10) {
-  const snapshot = await db
+  let query = db
     .collection("worldBosses")
     .doc(worldId)
     .collection("damage")
-    .orderBy("damage", "desc")
-    .limit(limit)
-    .get();
+    .orderBy("damage", "desc");
+
+  if (limit) query = query.limit(limit);
+
+  const snapshot = await query.get();
 
   return snapshot.docs.map((doc, index) => ({
     rank: index + 1,
@@ -256,20 +210,22 @@ async function getDamageRanking(worldId, limit = 10) {
   }));
 }
 
+async function getAllDamageRanking(worldId) {
+  return getDamageRanking(worldId, null);
+}
+
 async function deleteBossData(worldId) {
   const bossRef = db.collection("worldBosses").doc(worldId);
-
   const damageSnapshot = await bossRef.collection("damage").get();
 
-  const batch = db.batch();
+  const docs = [...damageSnapshot.docs, { ref: bossRef }];
+  const chunkSize = 450;
 
-  damageSnapshot.docs.forEach((doc) => {
-    batch.delete(doc.ref);
-  });
-
-  batch.delete(bossRef);
-
-  await batch.commit();
+  for (let i = 0; i < docs.length; i += chunkSize) {
+    const batch = db.batch();
+    docs.slice(i, i + chunkSize).forEach((doc) => batch.delete(doc.ref));
+    await batch.commit();
+  }
 
   console.log(`Boss data for ${worldId} deleted.`);
 }
@@ -332,13 +288,8 @@ function rollChance(percent) {
 
 function getLegendaryChanceByRank(rank) {
   if (rank === 1) return bossConfig.rankingRewards.top1.legendaryChance;
-  if (rank >= 2 && rank <= 5) {
-    return bossConfig.rankingRewards.top2to5.legendaryChance;
-  }
-  if (rank >= 6 && rank <= 10) {
-    return bossConfig.rankingRewards.top6to10.legendaryChance;
-  }
-
+  if (rank >= 2 && rank <= 5) return bossConfig.rankingRewards.top2to5.legendaryChance;
+  if (rank >= 6 && rank <= 10) return bossConfig.rankingRewards.top6to10.legendaryChance;
   return 0;
 }
 
@@ -348,12 +299,11 @@ module.exports = {
   spawnBoss,
   saveDamage,
   getDamageRanking,
+  getAllDamageRanking,
   deleteBossData,
   getRewardPenalty,
   rollChance,
   getLegendaryChanceByRank,
-
-  // Aggro v1
   calculateThreatGain,
   pickBossTarget,
 };

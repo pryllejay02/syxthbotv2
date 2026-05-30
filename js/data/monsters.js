@@ -9,8 +9,8 @@ const monsters = [
     defense: 1,
     dodge: 1,
     crit: 2,
-    exp: 20,
-    gold: 25,
+    exp: 45,
+    gold: 35,
     image: path.join(__dirname, "../../img/monsters_img/slime.png"),
   },
   {

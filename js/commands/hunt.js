@@ -3,8 +3,10 @@ const { db } = require("../../firebase/firebase");
 const monsters = require("../data/monsters");
 
 function getRandomMonster(playerLevel) {
-  // Lv.1–4 only fight Lv.1 monsters
-  if (playerLevel >= 1 && playerLevel <= 4) {
+  const level = Number(playerLevel || 1);
+
+  // New players should learn the game safely, but not grind Slimes forever.
+  if (level <= 3) {
     const levelOneMonsters = monsters.filter(
       (monster) => Number(monster.level) === 1
     );
@@ -18,17 +20,19 @@ function getRandomMonster(playerLevel) {
     return monsters[0];
   }
 
-  const possibleMonsters = monsters.filter(
-    (monster) => Number(monster.level) <= playerLevel + 5
-  );
+  const minLevel = Math.max(1, level - 5);
+  const maxLevel = level + 3;
+
+  const possibleMonsters = monsters.filter((monster) => {
+    const monsterLevel = Number(monster.level || 1);
+    return monsterLevel >= minLevel && monsterLevel <= maxLevel;
+  });
 
   if (possibleMonsters.length === 0) {
     return monsters[0];
   }
 
-  return possibleMonsters[
-    Math.floor(Math.random() * possibleMonsters.length)
-  ];
+  return possibleMonsters[Math.floor(Math.random() * possibleMonsters.length)];
 }
 
 module.exports = async function huntCommand(message) {

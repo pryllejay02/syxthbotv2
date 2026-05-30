@@ -4,7 +4,8 @@ function getRequiredExp(level) {
   if (level >= MAX_LEVEL) return Infinity;
 
   if (level <= 20) {
-    return Math.floor(50 + level * 35 + level * level * 8);
+    // Smoother early game: avoids forcing new players to grind too long before Lv.5.
+    return Math.floor(30 + level * 20 + level * level * 5);
   }
 
   if (level <= 50) {

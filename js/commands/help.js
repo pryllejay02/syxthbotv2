@@ -89,10 +89,6 @@ module.exports = async function helpCommand(message, prefix) {
     `🔵 Rare\n` +
     `🟠 Legendary\n\n` +
 
-    `🤖 **Creator Only**\n` +
-    `\`${p}creator on\` - Turn Auto Hunt on\n` +
-    `\`${p}creator off\` - Turn Auto Hunt off\n` +
-    `\`${p}creator status\` - Check Auto Hunt status\n\n` +
 
     `🔥 Explore • Hunt • Raid • Trade • Level Up`;
 

@@ -214,8 +214,7 @@ module.exports = async function shopCommand(message, args = []) {
         `🔓 Required: Lv.${item.requiredLevel || 1}\n` +
         `🎭 Class: \`${formatClass(item.compatibleClasses || ["all"])}\`\n` +
         `📊 ${formatStats(item.stats || {})}\n` +
-        `💰 ${item.price || 0} Gold\n` +
-        `✨ ${item.description || "No description"}`
+        `💰 ${item.price || 0} Gold\n`
       );
     })
     .join("\n\n");

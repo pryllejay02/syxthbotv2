@@ -1,9 +1,13 @@
 const { db } = require("../../firebase/firebase");
+
 const {
   calculateTotalStats,
   getDefaultEquipment,
 } = require("../utils/statSystem");
+
 const balanceConfig = require("../data/balanceConfig");
+const shopItems = require("../data/shopItems");
+const { getQualityEmoji } = require("../utils/qualitySystem");
 
 function getMention(message) {
   return message.mentions.users.first();
@@ -47,18 +51,355 @@ function getBaseStatsByClassLevel(classId, level) {
   };
 }
 
-function getSafeEquipment(player = {}) {
+function getStarterWeaponByClass(classId) {
+  const weapons = {
+    swordsman: {
+      name: "Wooden Sword",
+      emoji: "🗡️",
+    },
+
+    archer: {
+      name: "Wooden Bow",
+      emoji: "🏹",
+    },
+
+    assassin: {
+      name: "Training Dagger",
+      emoji: "🗡️",
+    },
+
+    tanker: {
+      name: "Wooden Shield",
+      emoji: "🛡️",
+    },
+  };
+
+  return weapons[classId] || weapons.swordsman;
+}
+
+function getDefaultStats() {
   return {
+    attack: 0,
+    defense: 0,
+    maxHp: 0,
+    dodge: 0,
+    crit: 0,
+  };
+}
+
+function normalizeId(value) {
+  return String(value || "").toLowerCase().trim();
+}
+
+function getQuality(item = {}) {
+  return item.quality || "Common";
+}
+
+function isStarterItem(item = {}) {
+  return (
+    item.quality === "Starter" ||
+    item.source === "starter" ||
+    item.isStarter === true
+  );
+}
+
+function isConsumable(item = {}) {
+  return String(item.type || "").toLowerCase() === "consumable";
+}
+
+function findBaseShopItem(item = {}) {
+  const candidateIds = [item.baseItemId, item.id]
+    .filter(Boolean)
+    .map(normalizeId);
+
+  for (const candidateId of candidateIds) {
+    const exactMatch = shopItems.find(
+      (shopItem) => normalizeId(shopItem.id) === candidateId
+    );
+
+    if (exactMatch) return exactMatch;
+  }
+
+  const itemId = normalizeId(item.id);
+
+  if (!itemId) return null;
+
+  const prefixMatches = shopItems
+    .filter((shopItem) => itemId.startsWith(normalizeId(shopItem.id)))
+    .sort(
+      (a, b) =>
+        normalizeId(b.id).length - normalizeId(a.id).length
+    );
+
+  return prefixMatches[0] || null;
+}
+
+function getRollConfigBySource(item = {}, quality = "Common") {
+  const source = String(item.source || "").toLowerCase();
+
+  if (source === "boss_raid") {
+    return balanceConfig.bossDrop?.statRolls?.[quality] || null;
+  }
+
+  if (source === "monster_drop") {
+    return balanceConfig.monsterDrop?.statRolls?.[quality] || null;
+  }
+
+  if (source === "admin_generated" || source === "admin") {
+    return balanceConfig.adminItem?.statRolls?.[quality] || null;
+  }
+
+  return null;
+}
+
+function getDeterministicMultiplier(item = {}, quality = "Common") {
+  if (quality === "Starter") return 0;
+
+  const source = String(item.source || "").toLowerCase();
+
+  if (!source || source === "shop") {
+    return Number(balanceConfig.quality?.[quality]?.statMultiplier || 1);
+  }
+
+  const rollConfig = getRollConfigBySource(item, quality);
+
+  if (rollConfig) {
+    const min = Number(rollConfig.min || 1);
+    const max = Number(rollConfig.max || min);
+
+    return Number(((min + max) / 2).toFixed(3));
+  }
+
+  if (quality === "Rare") {
+    const rollConfig =
+      balanceConfig.monsterDrop?.statRolls?.Rare ||
+      balanceConfig.adminItem?.statRolls?.Rare;
+
+    if (rollConfig) {
+      const min = Number(rollConfig.min || 1);
+      const max = Number(rollConfig.max || min);
+
+      return Number(((min + max) / 2).toFixed(3));
+    }
+  }
+
+  if (quality === "Legendary") {
+    const rollConfig =
+      balanceConfig.bossDrop?.statRolls?.Legendary ||
+      balanceConfig.adminItem?.statRolls?.Legendary;
+
+    if (rollConfig) {
+      const min = Number(rollConfig.min || 1);
+      const max = Number(rollConfig.max || min);
+
+      return Number(((min + max) / 2).toFixed(3));
+    }
+  }
+
+  return Number(balanceConfig.quality?.[quality]?.statMultiplier || 1);
+}
+
+function getPriceMultiplierBySource(item = {}, quality = "Common") {
+  const source = String(item.source || "").toLowerCase();
+
+  if (source === "boss_raid") {
+    return Number(balanceConfig.bossDrop?.priceMultiplier?.[quality] || 1);
+  }
+
+  if (source === "monster_drop") {
+    return Number(balanceConfig.monsterDrop?.priceMultiplier?.[quality] || 1);
+  }
+
+  return Number(balanceConfig.quality?.[quality]?.priceMultiplier || 1);
+}
+
+function scaleStats(stats = {}, multiplier = 1) {
+  return {
+    attack: Math.floor(Number(stats.attack || 0) * multiplier),
+    defense: Math.floor(Number(stats.defense || 0) * multiplier),
+    maxHp: Math.floor(Number(stats.maxHp || 0) * multiplier),
+    dodge: Number((Number(stats.dodge || 0) * multiplier).toFixed(1)),
+    crit: Number((Number(stats.crit || 0) * multiplier).toFixed(1)),
+  };
+}
+
+function getCleanItemName(baseName = "Unknown Item", quality = "Common") {
+  const cleanBaseName = String(baseName || "Unknown Item").replace(
+    /^(Common|Rare|Legendary|Starter)\s+/i,
+    ""
+  );
+
+  if (quality === "Starter") {
+    return cleanBaseName;
+  }
+
+  return `${quality} ${cleanBaseName}`;
+}
+
+function rebalanceItemStats(item = {}) {
+  if (!item) return null;
+
+  const quality = getQuality(item);
+
+  if (isStarterItem(item)) {
+    return {
+      ...item,
+
+      quality: "Starter",
+      qualityEmoji: "🌱",
+
+      price: 0,
+      source: "starter",
+      isStarter: true,
+
+      quantity: Math.max(1, Number(item.quantity || 1)),
+
+      stats: getDefaultStats(),
+    };
+  }
+
+  if (isConsumable(item)) {
+    return {
+      ...item,
+
+      quality,
+      qualityEmoji: item.qualityEmoji || getQualityEmoji(quality),
+
+      quantity: Math.max(1, Number(item.quantity || 1)),
+
+      stats: item.stats || getDefaultStats(),
+
+      healPercent: Number(item.healPercent || 0),
+      healAmount: Number(item.healAmount || item.heal || 0),
+    };
+  }
+
+  const baseItem = findBaseShopItem(item);
+
+  if (!baseItem) {
+    return {
+      ...item,
+
+      quality,
+      qualityEmoji: item.qualityEmoji || getQualityEmoji(quality),
+
+      quantity: Math.max(1, Number(item.quantity || 1)),
+
+      stats: {
+        attack: Number(item.stats?.attack || 0),
+        defense: Number(item.stats?.defense || 0),
+        maxHp: Number(item.stats?.maxHp || 0),
+        dodge: Number(item.stats?.dodge || 0),
+        crit: Number(item.stats?.crit || 0),
+      },
+    };
+  }
+
+  const multiplier = getDeterministicMultiplier(item, quality);
+  const rebalancedStats = scaleStats(
+    baseItem.stats || getDefaultStats(),
+    multiplier
+  );
+
+  const priceMultiplier = getPriceMultiplierBySource(item, quality);
+
+  return {
+    ...item,
+
+    id: item.id || baseItem.id,
+    baseItemId: baseItem.id,
+
+    name: getCleanItemName(baseItem.name, quality),
+    type: baseItem.type || item.type || "Unknown",
+
+    quality,
+    qualityEmoji: getQualityEmoji(quality),
+
+    requiredLevel: Number(baseItem.requiredLevel || item.requiredLevel || 1),
+    compatibleClasses:
+      baseItem.compatibleClasses || item.compatibleClasses || ["all"],
+
+    price: Math.floor(
+      Number(baseItem.price || item.price || 0) * priceMultiplier
+    ),
+
+    description: baseItem.description || item.description || "",
+
+    stats: rebalancedStats,
+
+    emoji: baseItem.emoji || item.emoji || "📦",
+
+    quantity: Math.max(1, Number(item.quantity || 1)),
+  };
+}
+
+function normalizeStarterWeapon(player) {
+  const classId = player.classId || "swordsman";
+  const starterWeapon = getStarterWeaponByClass(classId);
+
+  const currentWeapon = player.equipment?.weapon;
+
+  if (currentWeapon && !isStarterItem(currentWeapon)) {
+    return rebalanceItemStats(currentWeapon);
+  }
+
+  return {
+    id: `${classId}_starter_weapon`,
+    baseItemId: `${classId}_starter_weapon`,
+    name: starterWeapon.name,
+    type: "Weapon",
+    quality: "Starter",
+    qualityEmoji: "🌱",
+    requiredLevel: 1,
+    compatibleClasses: [classId],
+    price: 0,
+    description: "Starter weapon.",
+    source: "starter",
+    isStarter: true,
+    quantity: 1,
+
+    stats: getDefaultStats(),
+
+    emoji: starterWeapon.emoji,
+  };
+}
+
+function normalizeEquipment(player = {}) {
+  const equipment = {
     ...getDefaultEquipment(),
     ...(player.equipment || {}),
   };
+
+  return {
+    weapon: normalizeStarterWeapon(player),
+    helmet: equipment.helmet ? rebalanceItemStats(equipment.helmet) : null,
+    armor: equipment.armor ? rebalanceItemStats(equipment.armor) : null,
+    gloves: equipment.gloves ? rebalanceItemStats(equipment.gloves) : null,
+    pants: equipment.pants ? rebalanceItemStats(equipment.pants) : null,
+    boots: equipment.boots ? rebalanceItemStats(equipment.boots) : null,
+  };
+}
+
+function normalizeInventory(inventory = []) {
+  if (!Array.isArray(inventory)) return [];
+
+  return inventory
+    .filter(Boolean)
+    .map((item) => rebalanceItemStats(item))
+    .filter(Boolean);
 }
 
 function recalculatePlayerStats(player = {}, targetLevel = null) {
   const level = Number(targetLevel || player.level || 1);
   const classId = player.classId || "swordsman";
+
   const baseStats = getBaseStatsByClassLevel(classId, level);
-  const equipment = getSafeEquipment(player);
+
+  const equipment = normalizeEquipment({
+    ...player,
+    classId,
+  });
+
   const totalStats = calculateTotalStats(baseStats, equipment);
 
   return {
@@ -101,6 +442,20 @@ function getAdminReviveHp(maxHp) {
   return Math.max(
     1,
     Math.floor(Number(maxHp || 100) * (revivePercent / 100))
+  );
+}
+
+function getHpAfterRebalance(player, oldMaxHp, newMaxHp) {
+  const oldHp = Number(player.hp ?? oldMaxHp ?? newMaxHp);
+
+  if (oldHp <= 0) return 0;
+
+  const safeOldMaxHp = Math.max(1, Number(oldMaxHp || newMaxHp || 100));
+  const hpPercent = oldHp / safeOldMaxHp;
+
+  return Math.max(
+    1,
+    Math.min(newMaxHp, Math.floor(Number(newMaxHp || 100) * hpPercent))
   );
 }
 
@@ -341,17 +696,24 @@ module.exports = async function adminPlayer(message, args = []) {
       }
 
       const player = playerDoc.data();
-      const inventory = Array.isArray(player.inventory)
-        ? player.inventory
-        : [];
 
+      const oldStats = {
+        hp: Number(player.hp || 0),
+        maxHp: Number(player.maxHp || 0),
+        attack: Number(player.attack || 0),
+        defense: Number(player.defense || 0),
+        dodge: Number(player.dodge || 0),
+        crit: Number(player.crit || 0),
+      };
+
+      const inventory = normalizeInventory(player.inventory || []);
       const recalculated = recalculatePlayerStats(player);
 
-      const currentHp = Number(player.hp ?? recalculated.totalStats.maxHp);
-      const repairedHp =
-        currentHp <= 0
-          ? 0
-          : Math.min(currentHp, Number(recalculated.totalStats.maxHp || 100));
+      const repairedHp = getHpAfterRebalance(
+        player,
+        oldStats.maxHp,
+        recalculated.totalStats.maxHp
+      );
 
       transaction.update(playerRef, {
         level: recalculated.level,
@@ -381,6 +743,7 @@ module.exports = async function adminPlayer(message, args = []) {
       return {
         ok: true,
         player,
+        oldStats,
         repairedHp,
         totalStats: recalculated.totalStats,
       };
@@ -391,7 +754,16 @@ module.exports = async function adminPlayer(message, args = []) {
     }
 
     return message.reply(
-      `✅ Repaired player data for **${result.player.username || target.username}**.\n\n` +
+      `✅ Repaired and rebalanced player data for **${
+        result.player.username || target.username
+      }**.\n\n` +
+        `📉 **Old Stats**\n` +
+        `❤️ HP: **${result.oldStats.hp}/${result.oldStats.maxHp}**\n` +
+        `⚔️ ATK: **${result.oldStats.attack}**\n` +
+        `🛡️ DEF: **${result.oldStats.defense}**\n` +
+        `💨 Dodge: **${result.oldStats.dodge}%**\n` +
+        `💥 Crit: **${result.oldStats.crit}%**\n\n` +
+        `📊 **New Stats**\n` +
         `❤️ HP: **${result.repairedHp}/${result.totalStats.maxHp}**\n` +
         `⚔️ ATK: **${result.totalStats.attack}**\n` +
         `🛡️ DEF: **${result.totalStats.defense}**\n` +

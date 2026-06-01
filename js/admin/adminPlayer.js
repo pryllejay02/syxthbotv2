@@ -1,55 +1,72 @@
 const { db } = require("../../firebase/firebase");
-const { calculateTotalStats } = require("../utils/statSystem");
+const {
+  calculateTotalStats,
+  getDefaultEquipment,
+} = require("../utils/statSystem");
+const balanceConfig = require("../data/balanceConfig");
 
 function getMention(message) {
   return message.mentions.users.first();
 }
 
+function getMaxLevel() {
+  return Number(balanceConfig.MAX_LEVEL || balanceConfig.maxLevel || 99);
+}
+
+function parsePositiveInteger(value) {
+  const amount = Number(value);
+
+  if (!Number.isInteger(amount)) return null;
+  if (amount <= 0) return null;
+
+  return amount;
+}
+
+function parseLevel(value) {
+  const level = Number(value);
+  const maxLevel = getMaxLevel();
+
+  if (!Number.isInteger(level)) return null;
+  if (level < 1) return null;
+  if (level > maxLevel) return null;
+
+  return level;
+}
+
 function getBaseStatsByClassLevel(classId, level) {
-  const lv = Math.max(1, Number(level || 1));
-
-  const growth = {
-    swordsman: {
-      attack: 10 + lv * 3,
-      defense: 6 + lv * 2,
-      maxHp: 110 + lv * 15,
-      dodge: 2 + lv * 0.05,
-      crit: 4 + lv * 0.05,
-    },
-
-    archer: {
-      attack: 12 + lv * 3.5,
-      defense: 4 + lv * 1.3,
-      maxHp: 90 + lv * 11,
-      dodge: 4 + lv * 0.08,
-      crit: 8 + lv * 0.12,
-    },
-
-    assassin: {
-      attack: 13 + lv * 3.7,
-      defense: 3 + lv * 1.1,
-      maxHp: 85 + lv * 10,
-      dodge: 7 + lv * 0.13,
-      crit: 10 + lv * 0.15,
-    },
-
-    tanker: {
-      attack: 8 + lv * 2.2,
-      defense: 10 + lv * 3,
-      maxHp: 150 + lv * 22,
-      dodge: 1 + lv * 0.03,
-      crit: 2 + lv * 0.03,
-    },
-  };
-
-  const stats = growth[classId] || growth.swordsman;
+  if (typeof balanceConfig.getBaseStatsByClassLevel === "function") {
+    return balanceConfig.getBaseStatsByClassLevel(classId, level);
+  }
 
   return {
-    attack: Math.floor(stats.attack),
-    defense: Math.floor(stats.defense),
-    maxHp: Math.floor(stats.maxHp),
-    dodge: Number(stats.dodge.toFixed(1)),
-    crit: Number(stats.crit.toFixed(1)),
+    attack: 10,
+    defense: 5,
+    maxHp: 100,
+    dodge: 0,
+    crit: 0,
+  };
+}
+
+function getSafeEquipment(player = {}) {
+  return {
+    ...getDefaultEquipment(),
+    ...(player.equipment || {}),
+  };
+}
+
+function recalculatePlayerStats(player = {}, targetLevel = null) {
+  const level = Number(targetLevel || player.level || 1);
+  const classId = player.classId || "swordsman";
+  const baseStats = getBaseStatsByClassLevel(classId, level);
+  const equipment = getSafeEquipment(player);
+  const totalStats = calculateTotalStats(baseStats, equipment);
+
+  return {
+    level,
+    classId,
+    baseStats,
+    equipment,
+    totalStats,
   };
 }
 
@@ -62,7 +79,9 @@ function getInventorySummary(inventory = []) {
   const starter = inventory.filter((item) => item.quality === "Starter").length;
   const common = inventory.filter((item) => item.quality === "Common").length;
   const rare = inventory.filter((item) => item.quality === "Rare").length;
-  const legendary = inventory.filter((item) => item.quality === "Legendary").length;
+  const legendary = inventory.filter(
+    (item) => item.quality === "Legendary"
+  ).length;
 
   return {
     stacks: inventory.length,
@@ -72,6 +91,17 @@ function getInventorySummary(inventory = []) {
     rare,
     legendary,
   };
+}
+
+function getAdminReviveHp(maxHp) {
+  const revivePercent = Number(
+    balanceConfig.revive?.freeReviveHpPercent || 50
+  );
+
+  return Math.max(
+    1,
+    Math.floor(Number(maxHp || 100) * (revivePercent / 100))
+  );
 }
 
 module.exports = async function adminPlayer(message, args = []) {
@@ -85,9 +115,9 @@ module.exports = async function adminPlayer(message, args = []) {
   const playerRef = db.collection("players").doc(target.id);
 
   if (subCommand === "givegold") {
-    const amount = Number(args[2]);
+    const amount = parsePositiveInteger(args[2]);
 
-    if (!amount || amount <= 0) {
+    if (!amount) {
       return message.reply("❌ Usage: `!s admin givegold @player <amount>`");
     }
 
@@ -107,10 +137,12 @@ module.exports = async function adminPlayer(message, args = []) {
 
       transaction.update(playerRef, {
         gold: newGold,
+        updatedAt: new Date(),
       });
 
       return {
         ok: true,
+        player,
         oldGold,
         newGold,
       };
@@ -121,17 +153,22 @@ module.exports = async function adminPlayer(message, args = []) {
     }
 
     return message.reply(
-      `✅ Gave **${amount} Gold** to ${target.username}.\n\n` +
+      `✅ Gave **${amount} Gold** to **${
+        result.player.username || target.username
+      }**.\n\n` +
         `🪙 Old Gold: **${result.oldGold}**\n` +
         `🪙 New Gold: **${result.newGold}**`
     );
   }
 
   if (subCommand === "setlevel") {
-    const level = Number(args[2]);
+    const level = parseLevel(args[2]);
+    const maxLevel = getMaxLevel();
 
-    if (!level || level < 1 || level > 99) {
-      return message.reply("❌ Usage: `!s admin setlevel @player <1-99>`");
+    if (!level) {
+      return message.reply(
+        `❌ Usage: \`!s admin setlevel @player <1-${maxLevel}>\``
+      );
     }
 
     const result = await db.runTransaction(async (transaction) => {
@@ -145,29 +182,32 @@ module.exports = async function adminPlayer(message, args = []) {
       }
 
       const player = playerDoc.data();
-      const classId = player.classId || "swordsman";
-      const baseStats = getBaseStatsByClassLevel(classId, level);
-      const equipment = player.equipment || {};
-      const totalStats = calculateTotalStats(baseStats, equipment);
+      const recalculated = recalculatePlayerStats(player, level);
 
       transaction.update(playerRef, {
         level,
         exp: 0,
-        baseStats,
-        attack: totalStats.attack,
-        defense: totalStats.defense,
-        maxHp: totalStats.maxHp,
-        dodge: totalStats.dodge,
-        crit: totalStats.crit,
-        hp: totalStats.maxHp,
+
+        baseStats: recalculated.baseStats,
+        equipment: recalculated.equipment,
+
+        attack: recalculated.totalStats.attack,
+        defense: recalculated.totalStats.defense,
+        maxHp: recalculated.totalStats.maxHp,
+        dodge: recalculated.totalStats.dodge,
+        crit: recalculated.totalStats.crit,
+        hp: recalculated.totalStats.maxHp,
+
         reviveAvailableAt: null,
         raidReviveAvailableAt: null,
+        updatedAt: new Date(),
       });
 
       return {
         ok: true,
-        classId,
-        totalStats,
+        player,
+        classId: recalculated.classId,
+        totalStats: recalculated.totalStats,
       };
     });
 
@@ -176,11 +216,12 @@ module.exports = async function adminPlayer(message, args = []) {
     }
 
     return message.reply(
-      `✅ ${target.username} is now **Lv.${level}**.\n\n` +
+      `✅ **${result.player.username || target.username}** is now **Lv.${level}**.\n\n` +
         `🎭 Class: **${result.classId}**\n` +
+        `⭐ EXP: **0**\n` +
         `⚔️ ATK: **${result.totalStats.attack}**\n` +
         `🛡️ DEF: **${result.totalStats.defense}**\n` +
-        `❤️ HP: **${result.totalStats.maxHp}**\n` +
+        `❤️ HP: **${result.totalStats.maxHp}/${result.totalStats.maxHp}**\n` +
         `💨 Dodge: **${result.totalStats.dodge}%**\n` +
         `💥 Crit: **${result.totalStats.crit}%**`
     );
@@ -202,10 +243,12 @@ module.exports = async function adminPlayer(message, args = []) {
 
       transaction.update(playerRef, {
         hp: maxHp,
+        updatedAt: new Date(),
       });
 
       return {
         ok: true,
+        player,
         maxHp,
       };
     });
@@ -215,7 +258,7 @@ module.exports = async function adminPlayer(message, args = []) {
     }
 
     return message.reply(
-      `❤️ ${target.username} has been fully healed.\n\n` +
+      `❤️ **${result.player.username || target.username}** has been fully healed.\n\n` +
         `HP: **${result.maxHp}/${result.maxHp}**`
     );
   }
@@ -233,16 +276,18 @@ module.exports = async function adminPlayer(message, args = []) {
 
       const player = playerDoc.data();
       const maxHp = Number(player.maxHp || 100);
-      const reviveHp = Math.floor(maxHp * 0.5);
+      const reviveHp = getAdminReviveHp(maxHp);
 
       transaction.update(playerRef, {
         hp: reviveHp,
         reviveAvailableAt: null,
         raidReviveAvailableAt: null,
+        updatedAt: new Date(),
       });
 
       return {
         ok: true,
+        player,
         reviveHp,
         maxHp,
       };
@@ -253,7 +298,7 @@ module.exports = async function adminPlayer(message, args = []) {
     }
 
     return message.reply(
-      `✨ ${target.username} revived.\n\n` +
+      `✨ **${result.player.username || target.username}** revived.\n\n` +
         `HP: **${result.reviveHp}/${result.maxHp}**`
     );
   }
@@ -273,7 +318,7 @@ module.exports = async function adminPlayer(message, args = []) {
     const summary = getInventorySummary(inventory);
 
     return message.reply(
-      `🎒 **${target.username}'s Inventory Summary**\n\n` +
+      `🎒 **${player.username || target.username}'s Inventory Summary**\n\n` +
         `🪙 Gold: **${player.gold || 0}**\n` +
         `📦 Item Stacks: **${summary.stacks}**\n` +
         `📦 Total Quantity: **${summary.totalQuantity}**\n\n` +
@@ -284,6 +329,77 @@ module.exports = async function adminPlayer(message, args = []) {
     );
   }
 
+  if (subCommand === "repairplayer") {
+    const result = await db.runTransaction(async (transaction) => {
+      const playerDoc = await transaction.get(playerRef);
+
+      if (!playerDoc.exists) {
+        return {
+          ok: false,
+          message: "❌ Character not found.",
+        };
+      }
+
+      const player = playerDoc.data();
+      const inventory = Array.isArray(player.inventory)
+        ? player.inventory
+        : [];
+
+      const recalculated = recalculatePlayerStats(player);
+
+      const currentHp = Number(player.hp ?? recalculated.totalStats.maxHp);
+      const repairedHp =
+        currentHp <= 0
+          ? 0
+          : Math.min(currentHp, Number(recalculated.totalStats.maxHp || 100));
+
+      transaction.update(playerRef, {
+        level: recalculated.level,
+        exp: Number(player.exp || 0),
+        gold: Number(player.gold || 0),
+
+        baseStats: recalculated.baseStats,
+        equipment: recalculated.equipment,
+        inventory,
+
+        attack: recalculated.totalStats.attack,
+        defense: recalculated.totalStats.defense,
+        maxHp: recalculated.totalStats.maxHp,
+        dodge: recalculated.totalStats.dodge,
+        crit: recalculated.totalStats.crit,
+        hp: repairedHp,
+
+        monsterKills: Number(player.monsterKills || 0),
+        retreats: Number(player.retreats || 0),
+
+        reviveAvailableAt: player.reviveAvailableAt || null,
+        raidReviveAvailableAt: player.raidReviveAvailableAt || null,
+
+        updatedAt: new Date(),
+      });
+
+      return {
+        ok: true,
+        player,
+        repairedHp,
+        totalStats: recalculated.totalStats,
+      };
+    });
+
+    if (!result.ok) {
+      return message.reply(result.message || "❌ Repair player failed.");
+    }
+
+    return message.reply(
+      `✅ Repaired player data for **${result.player.username || target.username}**.\n\n` +
+        `❤️ HP: **${result.repairedHp}/${result.totalStats.maxHp}**\n` +
+        `⚔️ ATK: **${result.totalStats.attack}**\n` +
+        `🛡️ DEF: **${result.totalStats.defense}**\n` +
+        `💨 Dodge: **${result.totalStats.dodge}%**\n` +
+        `💥 Crit: **${result.totalStats.crit}%**`
+    );
+  }
+
   return message.reply(
     "❌ Unknown player admin command.\n\n" +
       "Available:\n" +
@@ -291,6 +407,7 @@ module.exports = async function adminPlayer(message, args = []) {
       "`!s admin setlevel @player <1-99>`\n" +
       "`!s admin heal @player`\n" +
       "`!s admin revive @player`\n" +
-      "`!s admin inventory @player`"
+      "`!s admin inventory @player`\n" +
+      "`!s admin repairplayer @player`"
   );
 };

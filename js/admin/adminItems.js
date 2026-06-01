@@ -1,37 +1,55 @@
 const { db } = require("../../firebase/firebase");
 const shopItems = require("../data/shopItems");
 const bossConfig = require("../data/bossConfig");
+const balanceConfig = require("../data/balanceConfig");
 const { getQualityEmoji } = require("../utils/qualitySystem");
 const { generateBossDrop } = require("../utils/bossLootSystem");
 
-const MAX_ADMIN_ITEM_QUANTITY = 50;
+const MAX_ADMIN_ITEM_QUANTITY = Number(
+  balanceConfig.adminItem?.maxQuantity || 50
+);
 
 function getMention(message) {
   return message.mentions.users.first();
 }
 
 function randomBetween(min, max) {
-  return Math.random() * (max - min) + min;
+  if (typeof balanceConfig.randomBetween === "function") {
+    return balanceConfig.randomBetween(min, max);
+  }
+
+  const safeMin = Number(min || 1);
+  const safeMax = Number(max || safeMin);
+
+  if (safeMax <= safeMin) return safeMin;
+
+  return Math.random() * (safeMax - safeMin) + safeMin;
 }
 
-function scaleStatsByQuality(stats, quality) {
-  const multiplier =
-    quality === "Legendary"
-      ? randomBetween(2.1, 2.8)
-      : quality === "Rare"
-      ? randomBetween(1.35, 1.75)
-      : randomBetween(0.9, 1.15);
+function scaleStatsByQuality(stats = {}, quality = "Common") {
+  const rollConfig =
+    balanceConfig.adminItem?.statRolls?.[quality] ||
+    balanceConfig.adminItem?.statRolls?.Common ||
+    {
+      min: 1,
+      max: 1.1,
+    };
+
+  const multiplier = randomBetween(
+    Number(rollConfig.min || 1),
+    Number(rollConfig.max || 1)
+  );
 
   return {
-    attack: Math.floor((stats.attack || 0) * multiplier),
-    defense: Math.floor((stats.defense || 0) * multiplier),
-    maxHp: Math.floor((stats.maxHp || 0) * multiplier),
-    dodge: Number(((stats.dodge || 0) * multiplier).toFixed(1)),
-    crit: Number(((stats.crit || 0) * multiplier).toFixed(1)),
+    attack: Math.floor(Number(stats.attack || 0) * multiplier),
+    defense: Math.floor(Number(stats.defense || 0) * multiplier),
+    maxHp: Math.floor(Number(stats.maxHp || 0) * multiplier),
+    dodge: Number((Number(stats.dodge || 0) * multiplier).toFixed(1)),
+    crit: Number((Number(stats.crit || 0) * multiplier).toFixed(1)),
   };
 }
 
-function makeDescription(stats) {
+function makeDescription(stats = {}) {
   const parts = [];
 
   if (stats.attack) parts.push(`+${stats.attack} ATK`);
@@ -60,55 +78,90 @@ function parseQuantity(value) {
   return quantity;
 }
 
-function generateAdminItem(baseItem, quality) {
-  const stats = scaleStatsByQuality(baseItem.stats || {}, quality);
-  const qualityEmoji = getQualityEmoji(quality);
+function getQualityPriceMultiplier(quality = "Common") {
+  return Number(balanceConfig.quality?.[quality]?.priceMultiplier || 1);
+}
 
-  const cleanBaseName = String(baseItem.name || "Unknown Item").replace(
-    /^Common /,
+function cleanItemName(name = "Unknown Item", quality = "Common") {
+  const cleanBaseName = String(name || "Unknown Item").replace(
+    /^(Common|Rare|Legendary|Starter)\s+/i,
     ""
   );
+
+  return `${quality} ${cleanBaseName}`;
+}
+
+function generateAdminItem(baseItem, quality) {
+  const isConsumable =
+    String(baseItem.type || "").toLowerCase() === "consumable";
+
+  const stats = isConsumable
+    ? baseItem.stats || {
+        attack: 0,
+        defense: 0,
+        maxHp: 0,
+        dodge: 0,
+        crit: 0,
+      }
+    : scaleStatsByQuality(baseItem.stats || {}, quality);
+
+  const qualityEmoji = getQualityEmoji(quality);
 
   return {
     ...baseItem,
 
-    id: `${baseItem.id}_${quality.toLowerCase()}_admin_${Date.now()}_${Math.floor(
-      Math.random() * 99999
-    )}`,
+    id: isConsumable
+      ? baseItem.id
+      : `${baseItem.id}_${quality.toLowerCase()}_admin_${Date.now()}_${Math.floor(
+          Math.random() * 99999
+        )}`,
 
-    baseItemId: baseItem.id,
+    baseItemId: baseItem.baseItemId || baseItem.id,
 
-    name:
-      quality === "Common"
-        ? `Common ${cleanBaseName}`
-        : `${quality} ${cleanBaseName}`,
+    name: isConsumable
+      ? baseItem.name
+      : cleanItemName(baseItem.name, quality),
 
     quality,
     qualityEmoji,
 
-    requiredLevel: baseItem.requiredLevel || 1,
+    requiredLevel: Number(baseItem.requiredLevel || 1),
     compatibleClasses: baseItem.compatibleClasses || ["all"],
 
     price: Math.floor(
-      Number(baseItem.price || 0) *
-        (quality === "Legendary" ? 5 : quality === "Rare" ? 2 : 1)
+      Number(baseItem.price || 0) * getQualityPriceMultiplier(quality)
     ),
 
-    description: makeDescription(stats),
+    description: isConsumable
+      ? baseItem.description || "Consumable item."
+      : makeDescription(stats),
+
     stats,
 
+    healPercent: Number(baseItem.healPercent || 0),
+    healAmount: Number(baseItem.healAmount || baseItem.heal || 0),
+
     quantity: 1,
-    source: "admin_generated",
+    source: isConsumable ? "admin_consumable" : "admin_generated",
+    emoji: baseItem.emoji || "📦",
   };
 }
 
-function addItemToInventory(inventory, item, quantity = 1) {
-  const existingIndex = inventory.findIndex(
-    (invItem) =>
+function addItemToInventory(inventory = [], item, quantity = 1) {
+  const isConsumable =
+    String(item.type || "").toLowerCase() === "consumable";
+
+  const existingIndex = inventory.findIndex((invItem) => {
+    if (isConsumable) {
+      return invItem.id === item.id;
+    }
+
+    return (
       invItem.baseItemId === item.baseItemId &&
       invItem.quality === item.quality &&
       JSON.stringify(invItem.stats || {}) === JSON.stringify(item.stats || {})
-  );
+    );
+  });
 
   if (existingIndex !== -1) {
     inventory[existingIndex].quantity =
@@ -126,11 +179,11 @@ function addItemToInventory(inventory, item, quantity = 1) {
 function getBossLevelByIdOrTier(value) {
   const key = String(value || "").toLowerCase();
 
-  if (bossConfig.bosses[key]) {
+  if (bossConfig.bosses?.[key]) {
     return bossConfig.bosses[key][0]?.level || 10;
   }
 
-  for (const bosses of Object.values(bossConfig.bosses)) {
+  for (const bosses of Object.values(bossConfig.bosses || {})) {
     const found = bosses.find(
       (boss) => boss.id && boss.id.toLowerCase() === key
     );
@@ -187,6 +240,7 @@ module.exports = async function adminItems(message, args = []) {
 
     const baseItem = shopItems.find(
       (shopItem) =>
+        shopItem.id &&
         shopItem.id.toLowerCase() === String(itemId).toLowerCase()
     );
 
@@ -217,10 +271,12 @@ module.exports = async function adminItems(message, args = []) {
 
       transaction.update(playerRef, {
         inventory,
+        updatedAt: new Date(),
       });
 
       return {
         ok: true,
+        player,
         givenItems,
       };
     });
@@ -231,14 +287,18 @@ module.exports = async function adminItems(message, args = []) {
 
     const exampleItem = result.givenItems[0];
     const cleanBaseName = String(baseItem.name || "Unknown Item").replace(
-      /^Common /,
+      /^(Common|Rare|Legendary|Starter)\s+/i,
       ""
     );
 
     return message.reply(
-      `✅ Gave **${quantity}x ${validQuality} ${cleanBaseName}** to ${target.username}.\n\n` +
-        `🎁 Example Roll: **${exampleItem.qualityEmoji} ${exampleItem.name}**\n` +
+      `✅ Gave **${quantity}x ${validQuality} ${cleanBaseName}** to **${
+        result.player.username || target.username
+      }**.\n\n` +
+        `🎁 Example Item: **${exampleItem.qualityEmoji} ${exampleItem.name}**\n` +
         `🏷️ ID: \`${exampleItem.id}\`\n` +
+        `🔓 Level: **Lv.${exampleItem.requiredLevel || 1}**\n` +
+        `🎭 Class: **${(exampleItem.compatibleClasses || ["all"]).join(", ")}**\n` +
         `📊 Stats: ${formatItemStats(exampleItem)}`
     );
   }
@@ -301,10 +361,12 @@ module.exports = async function adminItems(message, args = []) {
 
       transaction.update(playerRef, {
         inventory,
+        updatedAt: new Date(),
       });
 
       return {
         ok: true,
+        player,
         givenItems,
       };
     });
@@ -316,10 +378,13 @@ module.exports = async function adminItems(message, args = []) {
     const exampleItem = result.givenItems[0];
 
     return message.reply(
-      `✅ Gave **${quantity}x ${validQuality} boss item(s)** to ${target.username}.\n\n` +
-        `🎁 Example Roll: **${exampleItem.qualityEmoji} ${exampleItem.name}**\n` +
+      `✅ Gave **${quantity}x ${validQuality} boss item(s)** to **${
+        result.player.username || target.username
+      }**.\n\n` +
+        `🎁 Example Item: **${exampleItem.qualityEmoji} ${exampleItem.name}**\n` +
         `🏷️ ID: \`${exampleItem.id}\`\n` +
         `🔓 Level: **Lv.${exampleItem.requiredLevel || 1}**\n` +
+        `🎭 Class: **${(exampleItem.compatibleClasses || ["all"]).join(", ")}**\n` +
         `📊 Stats: ${formatItemStats(exampleItem)}`
     );
   }

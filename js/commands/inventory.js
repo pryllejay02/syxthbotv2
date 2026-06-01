@@ -10,7 +10,7 @@ const { getQualityEmoji } = require("../utils/qualitySystem");
 
 const ITEMS_PER_PAGE = 8;
 
-function getItemEmoji(item) {
+function getItemEmoji(item = {}) {
   if (item.emoji) return item.emoji;
 
   const type = String(item.type || "").toLowerCase();
@@ -24,6 +24,22 @@ function getItemEmoji(item) {
   if (type === "consumable") return "🧪";
 
   return "📦";
+}
+
+function getQualityDisplay(item = {}) {
+  const quality = item.quality || "Common";
+
+  if (quality === "Starter") {
+    return {
+      quality,
+      qualityEmoji: "🌱",
+    };
+  }
+
+  return {
+    quality,
+    qualityEmoji: item.qualityEmoji || getQualityEmoji(quality),
+  };
 }
 
 function formatClass(classes = []) {
@@ -56,7 +72,7 @@ function getTotalQuantity(items = []) {
   );
 }
 
-function filterInventory(inventory, filter) {
+function filterInventory(inventory = [], filter = "all") {
   const normalized = String(filter || "all").toLowerCase();
 
   if (normalized === "all") return inventory;
@@ -137,6 +153,19 @@ function getFilterLabel(filter) {
   return labels[normalized] || "All Items";
 }
 
+function getValidFiltersText() {
+  return (
+    "Use:\n" +
+    "`!s inventory all`\n" +
+    "`!s inventory equipment`\n" +
+    "`!s inventory consumable`\n" +
+    "`!s inventory common`\n" +
+    "`!s inventory rare`\n" +
+    "`!s inventory legendary`\n" +
+    "`!s inventory starter`"
+  );
+}
+
 module.exports = async function inventoryCommand(message, args = []) {
   const userId = message.author.id;
   const playerRef = db.collection("players").doc(userId);
@@ -156,14 +185,7 @@ module.exports = async function inventoryCommand(message, args = []) {
 
   if (!validFilters.includes(filter)) {
     return message.reply(
-      "❌ Invalid inventory filter.\n\n" +
-        "Use:\n" +
-        "`!s inventory all`\n" +
-        "`!s inventory equipment`\n" +
-        "`!s inventory consumable`\n" +
-        "`!s inventory common`\n" +
-        "`!s inventory rare`\n" +
-        "`!s inventory legendary`"
+      "❌ Invalid inventory filter.\n\n" + getValidFiltersText()
     );
   }
 
@@ -211,23 +233,19 @@ module.exports = async function inventoryCommand(message, args = []) {
         : currentItems
             .map((item) => {
               const emoji = getItemEmoji(item);
-
-              const qualityEmoji = getQualityEmoji(
-                item.quality || "Common"
-              );
-
+              const { quality, qualityEmoji } = getQualityDisplay(item);
               const quantity = Number(item.quantity || 1);
+              const baseItemId = item.baseItemId || item.id || "no-base-id";
 
               return (
                 `${emoji} **${item.name || "Unknown Item"}** x${quantity}\n` +
-                `└ ${qualityEmoji} ${item.quality || "Common"} • ${
-                  item.type || "Unknown"
-                }\n` +
+                `└ ${qualityEmoji} ${quality} • ${item.type || "Unknown"}\n` +
                 `└ 🔓 Lv.${item.requiredLevel || 1}\n` +
                 `└ 🎭 ${formatClass(item.compatibleClasses || ["all"])}\n` +
                 `└ 📊 ${formatStats(item.stats || {})}\n` +
                 `└ 💰 Price: ${item.price || 0} Gold\n` +
-                `└ 🏷️ \`${item.id || "no-id"}\``
+                `└ 🏷️ ID: \`${item.id || "no-id"}\`\n` +
+                `└ 🧬 Base ID: \`${baseItemId}\``
               );
             })
             .join("\n\n");
@@ -277,7 +295,7 @@ module.exports = async function inventoryCommand(message, args = []) {
     components: totalPages > 1 ? [createButtons(currentPage)] : [],
   });
 
-  if (totalPages <= 1) return;
+  if (totalPages <= 1) return null;
 
   const collector = reply.createMessageComponentCollector({
     time: 120000,
@@ -298,10 +316,12 @@ module.exports = async function inventoryCommand(message, args = []) {
       currentPage = Math.min(totalPages - 1, currentPage + 1);
     }
 
-    await interaction.update({
-      embeds: [createEmbed(currentPage)],
-      components: [createButtons(currentPage)],
-    });
+    await interaction
+      .update({
+        embeds: [createEmbed(currentPage)],
+        components: [createButtons(currentPage)],
+      })
+      .catch(() => null);
   });
 
   collector.on("end", async () => {
@@ -309,6 +329,8 @@ module.exports = async function inventoryCommand(message, args = []) {
       .edit({
         components: [],
       })
-      .catch(() => {});
+      .catch(() => null);
   });
+
+  return null;
 };

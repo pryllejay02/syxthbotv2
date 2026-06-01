@@ -1,7 +1,38 @@
 const path = require("path");
 
+function monster({
+  id,
+  name,
+  level,
+  hp,
+  attack,
+  defense,
+  dodge = 0,
+  crit = 0,
+  exp = 0,
+  gold = 0,
+  image,
+}) {
+  return {
+    id,
+    name,
+    level: Number(level || 1),
+    hp: Number(hp || 1),
+    attack: Number(attack || 1),
+    defense: Number(defense || 0),
+    dodge: Number(dodge || 0),
+    crit: Number(crit || 0),
+    exp: Number(exp || 0),
+    gold: Number(gold || 0),
+    image: image
+      ? path.join(__dirname, "../../img/monsters_img", image)
+      : null,
+  };
+}
+
 const monsters = [
-  {
+  monster({
+    id: "slime",
     name: "Slime",
     level: 1,
     hp: 30,
@@ -11,9 +42,11 @@ const monsters = [
     crit: 2,
     exp: 45,
     gold: 35,
-    image: path.join(__dirname, "../../img/monsters_img/slime.png"),
-  },
-  {
+    image: "slime.png",
+  }),
+
+  monster({
+    id: "goblin",
     name: "Goblin",
     level: 5,
     hp: 80,
@@ -23,9 +56,11 @@ const monsters = [
     crit: 4,
     exp: 60,
     gold: 70,
-    image: path.join(__dirname, "../../img/monsters_img/goblin.png"),
-  },
-  {
+    image: "goblin.png",
+  }),
+
+  monster({
+    id: "wolf",
     name: "Wolf",
     level: 10,
     hp: 150,
@@ -35,9 +70,11 @@ const monsters = [
     crit: 6,
     exp: 120,
     gold: 110,
-    image: path.join(__dirname, "../../img/monsters_img/wolf.png"),
-  },
-  {
+    image: "wolf.png",
+  }),
+
+  monster({
+    id: "skeleton_soldier",
     name: "Skeleton Soldier",
     level: 15,
     hp: 250,
@@ -47,9 +84,11 @@ const monsters = [
     crit: 8,
     exp: 220,
     gold: 140,
-    image: path.join(__dirname, "../../img/monsters_img/skeleton_soldier.png"),
-  },
-  {
+    image: "skeleton_soldier.png",
+  }),
+
+  monster({
+    id: "orc_warrior",
     name: "Orc Warrior",
     level: 20,
     hp: 350,
@@ -59,9 +98,11 @@ const monsters = [
     crit: 9,
     exp: 350,
     gold: 160,
-    image: path.join(__dirname, "../../img/monsters_img/orc_warrior.png"),
-  },
-  {
+    image: "orc_warrior.png",
+  }),
+
+  monster({
+    id: "cursed_spider",
     name: "Cursed Spider",
     level: 25,
     hp: 470,
@@ -71,9 +112,11 @@ const monsters = [
     crit: 11,
     exp: 450,
     gold: 220,
-    image: path.join(__dirname, "../../img/monsters_img/cursed_spider.png"),
-  },
-  {
+    image: "cursed_spider.png",
+  }),
+
+  monster({
+    id: "lava_golem",
     name: "Lava Golem",
     level: 30,
     hp: 600,
@@ -83,9 +126,11 @@ const monsters = [
     crit: 12,
     exp: 550,
     gold: 280,
-    image: path.join(__dirname, "../../img/monsters_img/lava_golem.png"),
-  },
-  {
+    image: "lava_golem.png",
+  }),
+
+  monster({
+    id: "shadow_assassin",
     name: "Shadow Assassin",
     level: 35,
     hp: 750,
@@ -95,9 +140,11 @@ const monsters = [
     crit: 16,
     exp: 700,
     gold: 350,
-    image: path.join(__dirname, "../../img/monsters_img/shadow_assassin.png"),
-  },
-  {
+    image: "shadow_assassin.png",
+  }),
+
+  monster({
+    id: "dark_knight",
     name: "Dark Knight",
     level: 40,
     hp: 900,
@@ -107,9 +154,11 @@ const monsters = [
     crit: 15,
     exp: 900,
     gold: 500,
-    image: path.join(__dirname, "../../img/monsters_img/dark_knight.png"),
-  },
-  {
+    image: "dark_knight.png",
+  }),
+
+  monster({
+    id: "crystal_beast",
     name: "Crystal Beast",
     level: 45,
     hp: 1100,
@@ -119,9 +168,11 @@ const monsters = [
     crit: 17,
     exp: 1100,
     gold: 650,
-    image: path.join(__dirname, "../../img/monsters_img/crystal_beast.png"),
-  },
-  {
+    image: "crystal_beast.png",
+  }),
+
+  monster({
+    id: "hell_guardian",
     name: "Hell Guardian",
     level: 50,
     hp: 1350,
@@ -131,9 +182,11 @@ const monsters = [
     crit: 19,
     exp: 1400,
     gold: 800,
-    image: path.join(__dirname, "../../img/monsters_img/hell_guardian.png"),
-  },
-  {
+    image: "hell_guardian.png",
+  }),
+
+  monster({
+    id: "phantom_reaper",
     name: "Phantom Reaper",
     level: 55,
     hp: 1600,
@@ -143,9 +196,11 @@ const monsters = [
     crit: 22,
     exp: 1700,
     gold: 950,
-    image: path.join(__dirname, "../../img/monsters_img/phantom_reaper.png"),
-  },
-  {
+    image: "phantom_reaper.png",
+  }),
+
+  monster({
+    id: "ancient_minotaur",
     name: "Ancient Minotaur",
     level: 60,
     hp: 1850,
@@ -155,9 +210,11 @@ const monsters = [
     crit: 20,
     exp: 2000,
     gold: 1150,
-    image: path.join(__dirname, "../../img/monsters_img/ancient_minotaur.png"),
-  },
-  {
+    image: "ancient_minotaur.png",
+  }),
+
+  monster({
+    id: "void_demon",
     name: "Void Demon",
     level: 65,
     hp: 2100,
@@ -167,9 +224,11 @@ const monsters = [
     crit: 24,
     exp: 2300,
     gold: 1300,
-    image: path.join(__dirname, "../../img/monsters_img/void_demon.png"),
-  },
-  {
+    image: "void_demon.png",
+  }),
+
+  monster({
+    id: "celestial_beast",
     name: "Celestial Beast",
     level: 70,
     hp: 2350,
@@ -179,9 +238,11 @@ const monsters = [
     crit: 26,
     exp: 2600,
     gold: 1450,
-    image: path.join(__dirname, "../../img/monsters_img/celestial_beast.png"),
-  },
-  {
+    image: "celestial_beast.png",
+  }),
+
+  monster({
+    id: "ancient_dragon",
     name: "Ancient Dragon",
     level: 75,
     hp: 2500,
@@ -191,9 +252,11 @@ const monsters = [
     crit: 28,
     exp: 3000,
     gold: 1500,
-    image: path.join(__dirname, "../../img/monsters_img/ancient_dragon.png"),
-  },
-  {
+    image: "ancient_dragon.png",
+  }),
+
+  monster({
+    id: "chaos_titan",
     name: "Chaos Titan",
     level: 80,
     hp: 3200,
@@ -203,9 +266,11 @@ const monsters = [
     crit: 32,
     exp: 4000,
     gold: 1900,
-    image: path.join(__dirname, "../../img/monsters_img/chaos_titan.png"),
-  },
-  {
+    image: "chaos_titan.png",
+  }),
+
+  monster({
+    id: "demon_emperor",
     name: "Demon Emperor",
     level: 85,
     hp: 4000,
@@ -215,9 +280,11 @@ const monsters = [
     crit: 36,
     exp: 5200,
     gold: 2400,
-    image: path.join(__dirname, "../../img/monsters_img/demon_emperor.png"),
-  },
-  {
+    image: "demon_emperor.png",
+  }),
+
+  monster({
+    id: "world_devourer",
     name: "World Devourer",
     level: 90,
     hp: 5200,
@@ -227,8 +294,8 @@ const monsters = [
     crit: 40,
     exp: 7000,
     gold: 3500,
-    image: path.join(__dirname, "../../img/monsters_img/world_devourer.png"),
-  },
+    image: "world_devourer.png",
+  }),
 ];
 
 module.exports = monsters;

@@ -1,4 +1,5 @@
 const path = require("path");
+const balanceConfig = require("./balanceConfig");
 
 module.exports = {
   spawnSchedule: [
@@ -128,32 +129,50 @@ module.exports = {
     ],
   },
 
-  rankingDeleteMinutes: 10,
+  rankingDeleteMinutes: Number(
+    balanceConfig.boss?.rankingDeleteMinutes || 10
+  ),
 
-  // Boss will automatically disappear if not defeated
-  bossExpireMinutes: 120,
+  // Boss will automatically disappear if not defeated.
+  bossExpireMinutes: Number(
+    balanceConfig.boss?.bossExpireMinutes || 120
+  ),
 
   participationRewards: {
-    rareChance: 30,
+    rareChance: Number(
+      balanceConfig.boss?.participationRareChance || 25
+    ),
   },
 
   rankingRewards: {
     top1: {
-      legendaryChance: 20,
+      legendaryChance: Number(
+        balanceConfig.boss?.legendaryChance?.top1 || 12
+      ),
     },
 
     top2to5: {
-      legendaryChance: 10,
+      legendaryChance: Number(
+        balanceConfig.boss?.legendaryChance?.top2to5 || 7
+      ),
     },
 
     top6to10: {
-      legendaryChance: 5,
+      legendaryChance: Number(
+        balanceConfig.boss?.legendaryChance?.top6to10 || 3
+      ),
     },
   },
 
   partyBonus: {
-    legendaryChance: 5,
-    gold: 5,
-    exp: 5,
+    legendaryChance: Number(
+      balanceConfig.boss?.partyBonus?.legendaryChance || 3
+    ),
+    gold: Number(
+      balanceConfig.boss?.partyBonus?.gold || 5
+    ),
+    exp: Number(
+      balanceConfig.boss?.partyBonus?.exp || 5
+    ),
   },
 };

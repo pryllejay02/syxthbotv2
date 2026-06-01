@@ -1,52 +1,13 @@
 const { db } = require("../../firebase/firebase");
+const balanceConfig = require("../data/balanceConfig");
+const {
+  getReadyReviveField,
+  getReviveRemainingSeconds,
+  getReviveTypeFromField,
+  getReviveHp,
+} = require("../utils/reviveSystem");
 
-const REST_COST = 100;
-const DEFAULT_REVIVE_SECONDS = 60;
-
-function getTimeValue(value) {
-  if (!value) return 0;
-
-  if (typeof value === "number") return value;
-
-  if (value.toMillis) {
-    return value.toMillis();
-  }
-
-  const parsed = Number(value);
-
-  if (!Number.isNaN(parsed)) return parsed;
-
-  const dateParsed = new Date(value).getTime();
-
-  return Number.isNaN(dateParsed) ? 0 : dateParsed;
-}
-
-function getReviveTimers(player) {
-  return [
-    getTimeValue(player.reviveAvailableAt),
-    getTimeValue(player.raidReviveAvailableAt),
-  ].filter((time) => time > 0);
-}
-
-function getRemainingReviveSeconds(player) {
-  const now = Date.now();
-  const timers = getReviveTimers(player);
-
-  if (!timers.length) return DEFAULT_REVIVE_SECONDS;
-
-  const earliest = Math.min(...timers);
-
-  return Math.max(0, Math.ceil((earliest - now) / 1000));
-}
-
-function isReviveReady(player) {
-  if (Number(player.hp || 0) > 0) return false;
-
-  const now = Date.now();
-  const timers = getReviveTimers(player);
-
-  return timers.some((timer) => now >= timer);
-}
+const REST_COST = Number(balanceConfig.economy?.restCost || 100);
 
 module.exports = async function restCommand(message) {
   const userId = message.author.id;
@@ -72,7 +33,7 @@ module.exports = async function restCommand(message) {
         ok: false,
         message:
           `⚔️ You cannot rest while fighting **${battle.monsterName}**!\n\n` +
-          `Use \`!s hit\` or \`!s retreat\`.`,
+          `Use \`!s hit\`, \`!s use <item_id>\`, or \`!s retreat\`.`,
       };
     }
 
@@ -83,8 +44,11 @@ module.exports = async function restCommand(message) {
     const gold = Number(player.gold ?? 0);
 
     if (hp <= 0) {
-      if (isReviveReady(player)) {
-        const revivedHp = Math.max(1, Math.floor(maxHp * 0.5));
+      const readyField = getReadyReviveField(player);
+
+      if (readyField) {
+        const reviveType = getReviveTypeFromField(readyField);
+        const revivedHp = getReviveHp(maxHp, reviveType);
 
         transaction.update(playerRef, {
           hp: revivedHp,
@@ -96,12 +60,13 @@ module.exports = async function restCommand(message) {
         return {
           ok: true,
           type: "free_revive",
+          reviveType,
           revivedHp,
           maxHp,
         };
       }
 
-      const remainingSeconds = getRemainingReviveSeconds(player);
+      const remainingSeconds = getReviveRemainingSeconds(player);
 
       if (gold < REST_COST) {
         return {
@@ -127,6 +92,7 @@ module.exports = async function restCommand(message) {
       return {
         ok: true,
         type: "instant_revive",
+        revivedHp: maxHp,
         maxHp,
         goldSpent: REST_COST,
         newGold,
@@ -160,6 +126,8 @@ module.exports = async function restCommand(message) {
     return {
       ok: true,
       type: "normal_rest",
+      oldHp: hp,
+      healedHp: maxHp,
       maxHp,
       goldSpent: REST_COST,
       newGold,
@@ -180,7 +148,7 @@ module.exports = async function restCommand(message) {
   if (result.type === "instant_revive") {
     return message.reply(
       `🛌 You paid for an instant revival.\n\n` +
-        `❤️ HP Fully Restored: **${result.maxHp}/${result.maxHp}**\n` +
+        `❤️ HP Fully Restored: **${result.revivedHp}/${result.maxHp}**\n` +
         `💰 Gold Spent: **${result.goldSpent}**\n` +
         `🪙 Remaining Gold: **${result.newGold}**`
     );
@@ -188,7 +156,7 @@ module.exports = async function restCommand(message) {
 
   return message.reply(
     `🛌 You rested at the inn.\n\n` +
-      `❤️ HP Restored: **${result.maxHp}/${result.maxHp}**\n` +
+      `❤️ HP Restored: **${result.oldHp} → ${result.healedHp}/${result.maxHp}**\n` +
       `💰 Gold Spent: **${result.goldSpent}**\n` +
       `🪙 Remaining Gold: **${result.newGold}**`
   );

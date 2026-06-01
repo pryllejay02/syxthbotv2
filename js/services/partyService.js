@@ -6,38 +6,87 @@ const {
 const { db } = require("../../firebase/firebase");
 const partyConfig = require("../data/partyConfig");
 
-function getPartyName(username) {
+function getMaxMembers() {
+  return Number(partyConfig.maxMembers || 5);
+}
+
+function getPartyName(username, userId = "") {
   const cleanName = String(username || "Adventurer")
     .replace(/[^a-zA-Z0-9-_ ]/g, "")
+    .trim()
     .slice(0, 20);
 
-  return `Party-${cleanName || "Adventurer"}`;
+  const suffix = userId ? `-${String(userId).slice(-4)}` : "";
+
+  return `Party-${cleanName || "Adventurer"}${suffix}`;
+}
+
+function getArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function uniqueIds(ids = []) {
+  return [...new Set(ids.filter(Boolean))];
 }
 
 async function createPartyVoiceChannel(message, worldConfig, leaderId) {
-  const partyVoiceChannel = await message.guild.channels.create({
-    name: getPartyName(message.author.username),
-    type: ChannelType.GuildVoice,
-    parent: worldConfig.partyVoiceCategoryId,
-    permissionOverwrites: [
-      {
-        id: message.guild.roles.everyone.id,
-        deny: [
-          PermissionsBitField.Flags.ViewChannel,
-          PermissionsBitField.Flags.Connect,
-        ],
-      },
-      {
-        id: leaderId,
-        allow: [
-          PermissionsBitField.Flags.ViewChannel,
-          PermissionsBitField.Flags.Connect,
-          PermissionsBitField.Flags.Speak,
-        ],
-      },
-    ],
-    reason: "Syxth MMORPG party voice channel created.",
-  });
+  if (!message.guild) return null;
+  if (!worldConfig?.partyVoiceCategoryId) return null;
+  if (!leaderId) return null;
+
+  const leaderMember = await message.guild.members
+    .fetch(leaderId)
+    .catch(() => null);
+
+  const leaderName =
+    leaderMember?.user?.username ||
+    message.author?.username ||
+    "Adventurer";
+
+  const permissionOverwrites = [
+    {
+      id: message.guild.roles.everyone.id,
+      deny: [
+        PermissionsBitField.Flags.ViewChannel,
+        PermissionsBitField.Flags.Connect,
+      ],
+    },
+    {
+      id: leaderId,
+      allow: [
+        PermissionsBitField.Flags.ViewChannel,
+        PermissionsBitField.Flags.Connect,
+        PermissionsBitField.Flags.Speak,
+      ],
+    },
+  ];
+
+  if (message.client?.user?.id) {
+    permissionOverwrites.push({
+      id: message.client.user.id,
+      allow: [
+        PermissionsBitField.Flags.ViewChannel,
+        PermissionsBitField.Flags.Connect,
+        PermissionsBitField.Flags.Speak,
+        PermissionsBitField.Flags.MoveMembers,
+        PermissionsBitField.Flags.ManageChannels,
+      ],
+    });
+  }
+
+  const partyVoiceChannel = await message.guild.channels
+    .create({
+      name: getPartyName(leaderName, leaderId),
+      type: ChannelType.GuildVoice,
+      parent: worldConfig.partyVoiceCategoryId,
+      userLimit: getMaxMembers(),
+      permissionOverwrites,
+      reason: "Syxth MMORPG party voice channel created.",
+    })
+    .catch((error) => {
+      console.error("Failed to create party voice channel:", error);
+      return null;
+    });
 
   return partyVoiceChannel;
 }
@@ -51,7 +100,10 @@ async function allowMemberInPartyVoice(channel, userId) {
       Connect: true,
       Speak: true,
     })
-    .catch(() => null);
+    .catch((error) => {
+      console.error("Failed to allow member in party voice:", error);
+      return false;
+    });
 
   return true;
 }
@@ -70,7 +122,12 @@ async function moveMemberToPartyVoice(member, channel) {
   if (!member || !channel) return false;
   if (!member.voice?.channel) return false;
 
-  await member.voice.setChannel(channel).catch(() => null);
+  await member.voice
+    .setChannel(channel)
+    .catch((error) => {
+      console.error("Failed to move member to party voice:", error);
+      return false;
+    });
 
   return true;
 }
@@ -84,9 +141,15 @@ async function safeDeletePartyVoiceChannel(guild, voiceChannelId) {
 
   if (!channel) return false;
 
-  await channel.delete().catch(() => null);
+  const deleted = await channel
+    .delete("Syxth MMORPG party voice channel cleanup.")
+    .then(() => true)
+    .catch((error) => {
+      console.error("Failed to delete party voice channel:", error);
+      return false;
+    });
 
-  return true;
+  return deleted;
 }
 
 async function createPartyDocument({
@@ -96,47 +159,52 @@ async function createPartyDocument({
   invited,
   voiceChannelId,
 }) {
-  const uniqueInvited = [...new Set(invited || [])].filter(
-    (id) => id && id !== leaderId
-  );
+  if (!partyRef || !worldId || !leaderId) {
+    return {
+      ok: false,
+      message: "Missing required party data.",
+    };
+  }
 
-  await partyRef.set({
+  const maxMembers = getMaxMembers();
+
+  const uniqueInvited = uniqueIds(invited)
+    .filter((id) => id !== leaderId)
+    .slice(0, Math.max(0, maxMembers - 1));
+
+  const partyData = {
     partyId: partyRef.id,
     worldId,
     leaderId,
     members: [leaderId],
     invited: uniqueInvited,
-    voiceChannelId,
+    voiceChannelId: voiceChannelId || null,
     status: "ready",
-    maxMembers: partyConfig.maxMembers,
+    maxMembers,
     createdAt: new Date(),
     updatedAt: new Date(),
-  });
+  };
+
+  await partyRef.set(partyData);
 
   return {
-    partyId: partyRef.id,
-    worldId,
-    leaderId,
-    members: [leaderId],
-    invited: uniqueInvited,
-    voiceChannelId,
-    status: "ready",
-    maxMembers: partyConfig.maxMembers,
+    ok: true,
+    ...partyData,
   };
 }
 
 async function updatePartyMembers(partyId, members, invited, voiceChannelId) {
   const partyRef = db.collection("parties").doc(partyId);
 
-  const uniqueMembers = [...new Set(members || [])];
-  const uniqueInvited = [...new Set(invited || [])].filter(
+  const uniqueMembers = uniqueIds(members);
+  const uniqueInvited = uniqueIds(invited).filter(
     (id) => !uniqueMembers.includes(id)
   );
 
   await partyRef.update({
     members: uniqueMembers,
     invited: uniqueInvited,
-    voiceChannelId,
+    voiceChannelId: voiceChannelId || null,
     status: "ready",
     updatedAt: new Date(),
   });
@@ -145,7 +213,7 @@ async function updatePartyMembers(partyId, members, invited, voiceChannelId) {
     partyId,
     members: uniqueMembers,
     invited: uniqueInvited,
-    voiceChannelId,
+    voiceChannelId: voiceChannelId || null,
   };
 }
 
@@ -163,12 +231,12 @@ async function addInvitesToParty(partyId, inviteIds = []) {
     }
 
     const party = partyDoc.data();
-    const members = party.members || [];
-    const invited = party.invited || [];
 
+    const members = getArray(party.members);
+    const invited = getArray(party.invited);
+
+    const maxMembers = Number(party.maxMembers || getMaxMembers());
     const currentCount = members.length + invited.length;
-    const maxMembers = Number(party.maxMembers || partyConfig.maxMembers);
-
     const availableSlots = Math.max(0, maxMembers - currentCount);
 
     if (availableSlots <= 0) {
@@ -178,7 +246,7 @@ async function addInvitesToParty(partyId, inviteIds = []) {
       };
     }
 
-    const newInvites = [...new Set(inviteIds)]
+    const newInvites = uniqueIds(inviteIds)
       .filter(
         (id) =>
           id &&
@@ -226,8 +294,9 @@ async function acceptPartyInvite(partyId, userId, voiceChannelId) {
     }
 
     const party = partyDoc.data();
-    const members = party.members || [];
-    const invited = party.invited || [];
+
+    const members = getArray(party.members);
+    const invited = getArray(party.invited);
 
     if (!invited.includes(userId)) {
       return {
@@ -247,7 +316,7 @@ async function acceptPartyInvite(partyId, userId, voiceChannelId) {
       };
     }
 
-    const maxMembers = Number(party.maxMembers || partyConfig.maxMembers);
+    const maxMembers = Number(party.maxMembers || getMaxMembers());
 
     if (members.length >= maxMembers) {
       return {
@@ -256,13 +325,16 @@ async function acceptPartyInvite(partyId, userId, voiceChannelId) {
       };
     }
 
-    const updatedMembers = [...new Set([...members, userId])];
+    const updatedMembers = uniqueIds([...members, userId]);
     const updatedInvited = invited.filter((id) => id !== userId);
+
+    const updatedVoiceChannelId =
+      voiceChannelId || party.voiceChannelId || null;
 
     transaction.update(partyRef, {
       members: updatedMembers,
       invited: updatedInvited,
-      voiceChannelId,
+      voiceChannelId: updatedVoiceChannelId,
       status: "ready",
       updatedAt: new Date(),
     });
@@ -274,7 +346,7 @@ async function acceptPartyInvite(partyId, userId, voiceChannelId) {
         ...party,
         members: updatedMembers,
         invited: updatedInvited,
-        voiceChannelId,
+        voiceChannelId: updatedVoiceChannelId,
       },
       updatedMembers,
       updatedInvited,
@@ -304,13 +376,11 @@ async function removeMemberFromParty(partyId, userId) {
       };
     }
 
-    const updatedMembers = (party.members || []).filter(
-      (id) => id !== userId
-    );
+    const members = getArray(party.members);
+    const invited = getArray(party.invited);
 
-    const updatedInvited = (party.invited || []).filter(
-      (id) => id !== userId
-    );
+    const updatedMembers = members.filter((id) => id !== userId);
+    const updatedInvited = invited.filter((id) => id !== userId);
 
     if (updatedMembers.length === 0) {
       transaction.delete(partyRef);
@@ -347,6 +417,8 @@ async function removeMemberFromParty(partyId, userId) {
 }
 
 async function disbandParty(activeParty, guild) {
+  if (!activeParty?.id) return false;
+
   if (activeParty.voiceChannelId) {
     await safeDeletePartyVoiceChannel(guild, activeParty.voiceChannelId);
   }
@@ -355,7 +427,9 @@ async function disbandParty(activeParty, guild) {
     .collection("parties")
     .doc(activeParty.id)
     .delete()
-    .catch(() => null);
+    .catch((error) => {
+      console.error("Failed to delete party document:", error);
+    });
 
   return true;
 }

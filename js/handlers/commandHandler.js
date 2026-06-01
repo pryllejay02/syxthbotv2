@@ -24,10 +24,12 @@ const flexCommand = require("../commands/flex");
 const adminCommand = require("../commands/admin");
 const creatorAutoCommand = require("../admin/autoplay");
 
+const balanceConfig = require("../data/balanceConfig");
+
 const { checkCooldown, formatCooldown } = require("../utils/cooldownSystem");
 const { resolvePlayerRevive } = require("../utils/reviveSystem");
 
-const COMMAND_COOLDOWNS = {
+const DEFAULT_COMMAND_COOLDOWNS = {
   hunt: 3000,
   hit: 1800,
   rest: 3000,
@@ -49,19 +51,44 @@ const COMMAND_COOLDOWNS = {
   raid: 2500,
 };
 
-function getCooldownAction(command, args) {
-  if (command === "raid") return `raid:${String(args[0] || "status").toLowerCase()}`;
-  if (command === "trade") return `trade:${String(args[0] || "invite").toLowerCase()}`;
-  if (command === "party") return `party:${String(args[0] || "help").toLowerCase()}`;
+// Uses balanceConfig.commandCooldowns, but keeps defaults as fallback
+// if any command cooldown is missing from balanceConfig.
+const COMMAND_COOLDOWNS = {
+  ...DEFAULT_COMMAND_COOLDOWNS,
+  ...(balanceConfig.commandCooldowns || {}),
+};
+
+function getCooldownAction(command, args = []) {
+  if (command === "raid") {
+    return `raid:${String(args[0] || "status").toLowerCase()}`;
+  }
+
+  if (command === "trade") {
+    return `trade:${String(args[0] || "invite").toLowerCase()}`;
+  }
+
+  if (command === "party") {
+    return `party:${String(args[0] || "help").toLowerCase()}`;
+  }
+
   return command;
+}
+
+function getCommandCooldown(command) {
+  return Number(COMMAND_COOLDOWNS[command] || 0);
 }
 
 module.exports = async function commandHandler(client, message, prefix) {
   try {
+    if (!message || !message.author) return;
     if (message.author.bot) return;
     if (!message.content.startsWith(prefix)) return;
 
-    const args = message.content.slice(prefix.length).trim().split(/ +/);
+    const rawInput = message.content.slice(prefix.length).trim();
+
+    if (!rawInput) return;
+
+    const args = rawInput.split(/ +/);
     const command = args.shift()?.toLowerCase();
 
     if (!command) return;
@@ -123,7 +150,7 @@ module.exports = async function commandHandler(client, message, prefix) {
       await resolvePlayerRevive(playerRef, player);
     }
 
-    const cooldownMs = COMMAND_COOLDOWNS[command] || 0;
+    const cooldownMs = getCommandCooldown(command);
 
     if (cooldownMs > 0) {
       const cooldown = checkCooldown(
@@ -171,6 +198,8 @@ module.exports = async function commandHandler(client, message, prefix) {
     if (commands[command]) {
       return commands[command]();
     }
+
+    return message.reply("❌ Unknown command. Use `!s help`.");
   } catch (error) {
     console.error("Command error:", error);
     return message.reply("❌ Something went wrong while running this command.");

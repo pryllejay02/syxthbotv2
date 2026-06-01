@@ -1,3 +1,5 @@
+const path = require("path");
+
 const {
   EmbedBuilder,
   AttachmentBuilder,
@@ -13,16 +15,23 @@ const {
   clearOldBossIfNeeded,
 } = require("../services/bossService");
 
+function getBossExpireMs() {
+  const expireMinutes = Number(bossConfig.bossExpireMinutes || 120);
+
+  return expireMinutes * 60 * 1000;
+}
+
 function getBossByTierOrId(input) {
   const key = String(input || "").toLowerCase();
 
   if (!key) return null;
 
-  // If input is a tier, choose random boss from that tier.
-  if (bossConfig.bosses[key]) {
+  if (bossConfig.bosses?.[key]) {
     const bosses = bossConfig.bosses[key];
 
-    if (!bosses.length) return null;
+    if (!Array.isArray(bosses) || bosses.length === 0) {
+      return null;
+    }
 
     const boss = bosses[Math.floor(Math.random() * bosses.length)];
 
@@ -33,7 +42,6 @@ function getBossByTierOrId(input) {
     };
   }
 
-  // If input is a specific boss ID.
   for (const [tier, bosses] of Object.entries(bossConfig.bosses || {})) {
     const foundBoss = bosses.find(
       (boss) => String(boss.id || "").toLowerCase() === key
@@ -63,22 +71,55 @@ function getAvailableBossHelp() {
 
   return (
     `Available tiers:\n` +
-    `\`${tiers.join(" ")}\`\n\n` +
+    `\`${tiers.length ? tiers.join(" ") : "No tiers configured"}\`\n\n` +
     `Available boss IDs:\n` +
-    `\`${bossIds.slice(0, 25).join(" ")}\``
+    `\`${bossIds.length ? bossIds.slice(0, 25).join(" ") : "No boss IDs configured"}\``
   );
 }
 
-async function sendBossAnnouncement(client, worldId, worldConfig, boss) {
+function normalizeBossData(boss) {
+  const level = Number(boss.level || 1);
+  const hp = Number(boss.hp || 1);
+  const attack = Number(boss.attack || 1);
+  const defense = Number(boss.defense || 0);
+
+  return {
+    ...boss,
+    level,
+    hp,
+    attack,
+    defense,
+
+    recommendedLevel: boss.recommendedLevel || {
+      min: Math.max(1, level - 5),
+      max: level + 10,
+    },
+
+    rewards: boss.rewards || {
+      gold: 0,
+      exp: 0,
+    },
+  };
+}
+
+async function sendBossAnnouncement(client, worldId, worldConfig, rawBoss) {
   const channel = await client.channels
     .fetch(worldConfig.bossRaidChannelId)
     .catch(() => null);
 
   if (!channel) return false;
 
-  const bossImage = boss.image
-    ? new AttachmentBuilder(boss.image)
-    : null;
+  const boss = normalizeBossData(rawBoss);
+
+  let bossImage = null;
+  let bossImageName = null;
+
+  if (boss.image) {
+    bossImageName = path.basename(boss.image);
+    bossImage = new AttachmentBuilder(boss.image, {
+      name: bossImageName,
+    });
+  }
 
   const embed = new EmbedBuilder()
     .setColor("#8B0000")
@@ -90,6 +131,7 @@ async function sendBossAnnouncement(client, worldId, worldConfig, boss) {
         `❤️ HP: **${boss.hp}/${boss.hp}**\n` +
         `⚔️ Attack: **${boss.attack}**\n` +
         `🛡️ Defense: **${boss.defense}**\n\n` +
+        `🎁 Rewards: **${boss.rewards.exp || 0} EXP** • **${boss.rewards.gold || 0} Gold**\n\n` +
         `⚠️ RAID BOSS ACTIVE\n\n` +
         `Use \`!s raid hit\`\n` +
         `Use \`!s raid status\``
@@ -99,18 +141,20 @@ async function sendBossAnnouncement(client, worldId, worldConfig, boss) {
     })
     .setTimestamp();
 
-  if (bossImage) {
-    embed.setImage(`attachment://${bossImage.name}`);
+  if (bossImage && bossImageName) {
+    embed.setImage(`attachment://${bossImageName}`);
 
     await channel.send({
       embeds: [embed],
       files: [bossImage],
     });
-  } else {
-    await channel.send({
-      embeds: [embed],
-    });
+
+    return true;
   }
+
+  await channel.send({
+    embeds: [embed],
+  });
 
   return true;
 }
@@ -157,12 +201,19 @@ async function clearOldBossBeforeSummon(message, worldId) {
 }
 
 async function summonBoss(message, worldId, bossInput) {
-  const worldConfig = partyConfig.worlds[worldId];
+  const worldConfig = partyConfig.worlds?.[worldId];
 
   if (!worldConfig) {
     return message.reply(
       `❌ Invalid world ID: **${worldId}**\n\n` +
         `Check your party/world config.`
+    );
+  }
+
+  if (!worldConfig.bossRaidChannelId) {
+    return message.reply(
+      `❌ Boss raid channel is missing for **${worldId}**.\n\n` +
+        `Please check your party/world config.`
     );
   }
 
@@ -181,13 +232,18 @@ async function summonBoss(message, worldId, bossInput) {
     return message.reply(cleanupResult.message);
   }
 
-  const { boss, tier, source } = bossResult;
+  const { tier, source } = bossResult;
+  const boss = normalizeBossData(bossResult.boss);
+
+  const spawnedAt = new Date();
+  const expiresAt = new Date(spawnedAt.getTime() + getBossExpireMs());
 
   const bossData = {
     worldId,
     bossId: boss.id,
     bossName: boss.name,
     tier,
+
     level: boss.level,
 
     hp: boss.hp,
@@ -199,9 +255,13 @@ async function summonBoss(message, worldId, bossInput) {
     rewards: boss.rewards,
 
     status: "active",
-    spawnedAt: new Date(),
+    spawnedAt,
+    expiresAt,
+
     summonedBy: message.author.id,
     summonSource: source,
+
+    updatedAt: new Date(),
   };
 
   await db.collection("worldBosses").doc(worldId).set(bossData);
@@ -220,13 +280,14 @@ async function summonBoss(message, worldId, bossInput) {
       `🏷️ Tier: **${tier}**\n` +
       `⭐ Level: **Lv.${boss.level}**\n` +
       `❤️ HP: **${boss.hp}/${boss.hp}**\n` +
+      `⏳ Expires In: **${bossConfig.bossExpireMinutes || 120} minutes**\n` +
       `🧹 Old Data Cleared: **${cleanupResult.cleared ? "Yes" : "No"}**\n` +
       `📢 Announcement: **${announced ? "Sent" : "Channel not found"}**`
   );
 }
 
 async function removeBoss(message, worldId) {
-  const worldConfig = partyConfig.worlds[worldId];
+  const worldConfig = partyConfig.worlds?.[worldId];
 
   if (!worldConfig) {
     return message.reply(
@@ -259,7 +320,8 @@ async function removeBoss(message, worldId) {
 
   return message.reply(
     `✅ Boss removed from **${worldId}**.\n\n` +
-      `👹 Removed Boss: **${activeBoss.bossName || "Unknown"}**`
+      `👹 Removed Boss: **${activeBoss.bossName || "Unknown"}**\n` +
+      `🧹 Boss data and ranking data cleared.`
   );
 }
 

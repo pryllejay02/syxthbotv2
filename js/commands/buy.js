@@ -1,8 +1,9 @@
 const { db } = require("../../firebase/firebase");
 const shopItems = require("../data/shopItems");
 const { getQualityEmoji } = require("../utils/qualitySystem");
+const balanceConfig = require("../data/balanceConfig");
 
-const MAX_BUY_QUANTITY = 99;
+const MAX_BUY_QUANTITY = Number(balanceConfig.shop?.maxBuyQuantity || 99);
 
 function canUseItem(player, item) {
   if (!item.compatibleClasses) return true;
@@ -25,7 +26,7 @@ module.exports = async function buyCommand(message, args = []) {
   const userId = message.author.id;
   const playerRef = db.collection("players").doc(userId);
 
-  const itemId = args[0];
+  const itemId = String(args[0] || "").toLowerCase();
   const quantity = parseBuyQuantity(args[1]);
 
   if (!itemId) {
@@ -44,7 +45,7 @@ module.exports = async function buyCommand(message, args = []) {
   const item = shopItems.find(
     (shopItem) =>
       shopItem.id &&
-      shopItem.id.toLowerCase() === itemId.toLowerCase()
+      String(shopItem.id).toLowerCase() === itemId
   );
 
   if (!item) {
@@ -101,18 +102,23 @@ module.exports = async function buyCommand(message, args = []) {
 
     const inventory = [...(player.inventory || [])];
 
+    const quality = item.quality || "Common";
+    const qualityEmoji = getQualityEmoji(quality);
+
     const itemData = {
       id: item.id,
+      baseItemId: item.baseItemId || item.id,
       name: item.name,
       type: item.type,
-      quality: item.quality || "Common",
-      qualityEmoji: getQualityEmoji(item.quality),
-      requiredLevel: item.requiredLevel || 1,
+      quality,
+      qualityEmoji,
+      requiredLevel: Number(item.requiredLevel || 1),
       compatibleClasses: item.compatibleClasses || ["all"],
       quantity,
-      price: item.price || 0,
+      price: itemPrice,
       description: item.description || "",
-      healPercent: item.healPercent || 0,
+      healPercent: Number(item.healPercent || 0),
+      healAmount: Number(item.healAmount || item.heal || 0),
       stats: item.stats || {
         attack: 0,
         defense: 0,
@@ -120,11 +126,16 @@ module.exports = async function buyCommand(message, args = []) {
         dodge: 0,
         crit: 0,
       },
+      source: item.source || "shop",
       emoji: item.emoji || "📦",
     };
 
     const existingItemIndex = inventory.findIndex(
-      (invItem) => invItem.id === item.id
+      (invItem) =>
+        invItem.id === item.id &&
+        invItem.quality === quality &&
+        JSON.stringify(invItem.stats || {}) ===
+          JSON.stringify(itemData.stats || {})
     );
 
     if (existingItemIndex !== -1) {
@@ -151,6 +162,7 @@ module.exports = async function buyCommand(message, args = []) {
       player,
       totalCost,
       newGold,
+      itemData,
     };
   });
 
@@ -158,7 +170,7 @@ module.exports = async function buyCommand(message, args = []) {
     return message.reply(result.message || "❌ Purchase failed.");
   }
 
-  const qualityEmoji = getQualityEmoji(item.quality);
+  const qualityEmoji = getQualityEmoji(item.quality || "Common");
 
   return message.reply(
     `${item.emoji || "📦"} ${qualityEmoji} You bought **${item.name} x${quantity}**!\n\n` +

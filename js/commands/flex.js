@@ -1,7 +1,10 @@
 const { EmbedBuilder } = require("discord.js");
 const { db } = require("../../firebase/firebase");
 const tradeConfig = require("../data/tradeConfig");
-const { getQualityEmoji } = require("../utils/qualitySystem");
+const {
+  getQualityEmoji,
+  getQualityColor,
+} = require("../utils/qualitySystem");
 
 const EQUIPMENT_SLOTS = [
   "weapon",
@@ -35,18 +38,24 @@ function formatStats(stats = {}) {
   return parts.length ? parts.join("\n") : "No bonus stats";
 }
 
-function getItemColor(item) {
-  const quality = String(item.quality || "Common").toLowerCase();
+function getItemColor(item = {}) {
+  const quality = item.quality || "Common";
 
-  if (quality === "legendary") return "#F59E0B";
-  if (quality === "rare") return "#3B82F6";
-  if (quality === "common") return "#22C55E";
-  if (quality === "starter") return "#94A3B8";
+  if (typeof getQualityColor === "function") {
+    return getQualityColor(quality);
+  }
+
+  const normalizedQuality = String(quality).toLowerCase();
+
+  if (normalizedQuality === "legendary") return "#F59E0B";
+  if (normalizedQuality === "rare") return "#3B82F6";
+  if (normalizedQuality === "common") return "#22C55E";
+  if (normalizedQuality === "starter") return "#94A3B8";
 
   return "#8B0000";
 }
 
-function getItemEmoji(item) {
+function getItemEmoji(item = {}) {
   if (item.emoji) return item.emoji;
 
   const type = String(item.type || "").toLowerCase();
@@ -62,16 +71,41 @@ function getItemEmoji(item) {
   return "📦";
 }
 
+function getQualityDisplay(item = {}) {
+  const quality = item.quality || "Common";
+
+  if (quality === "Starter") {
+    return {
+      quality,
+      qualityEmoji: "🌱",
+    };
+  }
+
+  return {
+    quality,
+    qualityEmoji: item.qualityEmoji || getQualityEmoji(quality),
+  };
+}
+
+function normalizeInput(value) {
+  return String(value || "").toLowerCase().trim();
+}
+
 function findInventoryItem(inventory = [], itemId) {
-  return inventory.find(
-    (item) =>
-      item.id &&
-      item.id.toLowerCase() === itemId.toLowerCase()
-  );
+  const normalizedItemId = normalizeInput(itemId);
+
+  return inventory.find((item) => {
+    if (!item) return false;
+
+    const id = normalizeInput(item.id);
+    const baseItemId = normalizeInput(item.baseItemId);
+
+    return id === normalizedItemId || baseItemId === normalizedItemId;
+  });
 }
 
 function findEquippedItem(equipment = {}, input) {
-  const normalized = String(input || "").toLowerCase();
+  const normalized = normalizeInput(input);
 
   if (EQUIPMENT_SLOTS.includes(normalized)) {
     const item = equipment[normalized];
@@ -87,11 +121,12 @@ function findEquippedItem(equipment = {}, input) {
   for (const slot of EQUIPMENT_SLOTS) {
     const item = equipment[slot];
 
-    if (
-      item &&
-      item.id &&
-      item.id.toLowerCase() === normalized
-    ) {
+    if (!item) continue;
+
+    const id = normalizeInput(item.id);
+    const baseItemId = normalizeInput(item.baseItemId);
+
+    if (id === normalized || baseItemId === normalized) {
       return {
         item,
         slot,
@@ -100,6 +135,10 @@ function findEquippedItem(equipment = {}, input) {
   }
 
   return null;
+}
+
+function formatSourceText(sourceText) {
+  return String(sourceText || "Unknown");
 }
 
 module.exports = async function flexCommand(message, args = []) {
@@ -132,9 +171,11 @@ module.exports = async function flexCommand(message, args = []) {
   }
 
   const player = playerDoc.data();
+
   const inventory = Array.isArray(player.inventory)
     ? player.inventory
     : [];
+
   const equipment = player.equipment || {};
 
   let item = findInventoryItem(inventory, itemId);
@@ -159,10 +200,7 @@ module.exports = async function flexCommand(message, args = []) {
     );
   }
 
-  const quality = item.quality || "Common";
-  const qualityEmoji =
-    quality === "Starter" ? "🌱" : getQualityEmoji(quality);
-
+  const { quality, qualityEmoji } = getQualityDisplay(item);
   const quantity = Number(item.quantity || 1);
   const itemEmoji = getItemEmoji(item);
 
@@ -179,10 +217,11 @@ module.exports = async function flexCommand(message, args = []) {
         name: "🏷️ Item Info",
         value:
           `**ID:** \`${item.id || "no-id"}\`\n` +
+          `**Base ID:** \`${item.baseItemId || item.id || "no-base-id"}\`\n` +
           `**Type:** ${item.type || "Unknown"}\n` +
           `**Quality:** ${qualityEmoji} ${quality}\n` +
           `**Quantity:** ${quantity}\n` +
-          `**Source:** ${sourceText}`,
+          `**Source:** ${formatSourceText(sourceText)}`,
         inline: true,
       },
       {

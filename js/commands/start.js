@@ -6,20 +6,47 @@ const {
 
 const { db } = require("../../firebase/firebase");
 const worlds = require("../data/worlds");
+const balanceConfig = require("../data/balanceConfig");
 
 // SERVER SELECTION CHANNEL ID
 const SERVER_SELECTION_CHANNEL_ID = "1507254912009113731";
 
+function getStartingGold() {
+  return Number(balanceConfig.economy?.startingGold || 500);
+}
+
 function buildWorldOptions() {
+  if (!Array.isArray(worlds)) return [];
+
   return worlds.slice(0, 25).map((world) => ({
-    label: world.name,
-    description: world.description || `Enter ${world.name}`,
+    label: world.name || world.id || "Unknown World",
+    description: world.description || `Enter ${world.name || world.id}`,
     value: world.id,
     emoji: world.emoji || "🌍",
   }));
 }
 
+function getExistingCharacterReply(player, username) {
+  const roomText = player.privateChannelId
+    ? `<#${player.privateChannelId}>`
+    : "No private room found. Please contact an admin.";
+
+  return (
+    `⚔️ You already have a Syxth character!\n\n` +
+    `👤 Character: **${player.username || username}**\n` +
+    `🌍 World: **${player.world?.name || "Unknown"}**\n` +
+    `🎭 Class: **${player.class || "Unknown"}**\n` +
+    `⭐ Level: **${player.level || 1}**\n` +
+    `🏠 Private Room: ${roomText}\n\n` +
+    `Use \`!s profile\` inside your private room.`
+  );
+}
+
 module.exports = async function startCommand(message) {
+  if (!message.guild) {
+    return message.reply("❌ You can only create a character inside the server.");
+  }
+
   if (message.channel.id !== SERVER_SELECTION_CHANNEL_ID) {
     return message.reply(
       `❌ You can only create your character in <#${SERVER_SELECTION_CHANNEL_ID}>.`
@@ -34,18 +61,8 @@ module.exports = async function startCommand(message) {
   if (playerDoc.exists) {
     const player = playerDoc.data();
 
-    const roomText = player.privateChannelId
-      ? `<#${player.privateChannelId}>`
-      : "No private room found.";
-
     return message.reply(
-      `⚔️ You already have a Syxth character!\n\n` +
-        `👤 Character: **${player.username || message.author.username}**\n` +
-        `🌍 World: **${player.world?.name || "Unknown"}**\n` +
-        `🎭 Class: **${player.class || "Unknown"}**\n` +
-        `⭐ Level: **${player.level || 1}**\n` +
-        `🏠 Private Room: ${roomText}\n\n` +
-        `Use \`!s profile\` inside your private room.`
+      getExistingCharacterReply(player, message.author.username)
     );
   }
 
@@ -55,10 +72,18 @@ module.exports = async function startCommand(message) {
     );
   }
 
+  const worldOptions = buildWorldOptions();
+
+  if (worldOptions.length === 0) {
+    return message.reply(
+      "❌ No valid world options are currently available. Please contact an admin."
+    );
+  }
+
   const menu = new StringSelectMenuBuilder()
     .setCustomId(`select_world_${userId}`)
     .setPlaceholder("🌍 Select your world")
-    .addOptions(buildWorldOptions());
+    .addOptions(worldOptions);
 
   const row = new ActionRowBuilder().addComponents(menu);
 
@@ -71,7 +96,7 @@ module.exports = async function startCommand(message) {
         `⚔️ Swordsman • 🏹 Archer • 🗡️ Assassin • 🛡️ Tanker\n\n` +
         `Your character will receive:\n` +
         `🗡️ Starter weapon\n` +
-        `🪙 500 Gold\n` +
+        `🪙 ${getStartingGold()} Gold\n` +
         `🏠 Private MMORPG room\n\n` +
         `Only **${message.author.username}** can use this selection menu.`
     )

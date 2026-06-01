@@ -2,10 +2,11 @@ const { EmbedBuilder } = require("discord.js");
 const { db } = require("../../firebase/firebase");
 const shopItems = require("../data/shopItems");
 const { getQualityEmoji } = require("../utils/qualitySystem");
+const balanceConfig = require("../data/balanceConfig");
 
 const SHOP_LEVELS = [
-  1, 5, 10, 15, 20, 25, 30, 35, 40, 45,
-  50, 55, 60, 65, 70, 75, 80, 85, 90,
+  1,
+  ...balanceConfig.ITEM_LEVELS.map(([level]) => level),
 ];
 
 function canUseItem(player, item) {

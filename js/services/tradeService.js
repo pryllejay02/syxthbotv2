@@ -18,45 +18,79 @@ function cleanChannelName(name) {
 function getTradeChannelName(trade) {
   const player1 = cleanChannelName(trade.player1Username || trade.player1Id);
   const player2 = cleanChannelName(trade.player2Username || trade.player2Id);
+  const suffix = String(trade.id || trade.tradeId || Date.now()).slice(-4);
 
-  return `trade-${player1}-${player2}`.slice(0, 90);
+  return `trade-${player1}-${player2}-${suffix}`.slice(0, 90);
 }
 
 async function createPrivateTradeChannel(message, trade) {
-  const channel = await message.guild.channels.create({
-    name: getTradeChannelName(trade),
-    type: ChannelType.GuildText,
-    parent: tradeConfig.tradeCategoryId,
+  if (!message.guild) return null;
+  if (!tradeConfig.tradeCategoryId) return null;
+  if (!trade?.player1Id || !trade?.player2Id) return null;
 
-    permissionOverwrites: [
-      {
-        id: message.guild.roles.everyone.id,
-        deny: [
-          PermissionsBitField.Flags.ViewChannel,
-          PermissionsBitField.Flags.SendMessages,
-          PermissionsBitField.Flags.ReadMessageHistory,
-        ],
-      },
-      {
-        id: trade.player1Id,
-        allow: [
-          PermissionsBitField.Flags.ViewChannel,
-          PermissionsBitField.Flags.SendMessages,
-          PermissionsBitField.Flags.ReadMessageHistory,
-        ],
-      },
-      {
-        id: trade.player2Id,
-        allow: [
-          PermissionsBitField.Flags.ViewChannel,
-          PermissionsBitField.Flags.SendMessages,
-          PermissionsBitField.Flags.ReadMessageHistory,
-        ],
-      },
-    ],
+  const category = await message.guild.channels
+    .fetch(tradeConfig.tradeCategoryId)
+    .catch(() => null);
 
-    reason: "Syxth MMORPG private trade room created.",
-  });
+  if (!category) {
+    console.error(
+      `Trade category not found: ${tradeConfig.tradeCategoryId}`
+    );
+
+    return null;
+  }
+
+  const permissionOverwrites = [
+    {
+      id: message.guild.roles.everyone.id,
+      deny: [
+        PermissionsBitField.Flags.ViewChannel,
+        PermissionsBitField.Flags.SendMessages,
+        PermissionsBitField.Flags.ReadMessageHistory,
+      ],
+    },
+    {
+      id: trade.player1Id,
+      allow: [
+        PermissionsBitField.Flags.ViewChannel,
+        PermissionsBitField.Flags.SendMessages,
+        PermissionsBitField.Flags.ReadMessageHistory,
+      ],
+    },
+    {
+      id: trade.player2Id,
+      allow: [
+        PermissionsBitField.Flags.ViewChannel,
+        PermissionsBitField.Flags.SendMessages,
+        PermissionsBitField.Flags.ReadMessageHistory,
+      ],
+    },
+  ];
+
+  if (message.client?.user?.id) {
+    permissionOverwrites.push({
+      id: message.client.user.id,
+      allow: [
+        PermissionsBitField.Flags.ViewChannel,
+        PermissionsBitField.Flags.SendMessages,
+        PermissionsBitField.Flags.ReadMessageHistory,
+        PermissionsBitField.Flags.ManageChannels,
+      ],
+    });
+  }
+
+  const channel = await message.guild.channels
+    .create({
+      name: getTradeChannelName(trade),
+      type: ChannelType.GuildText,
+      parent: tradeConfig.tradeCategoryId,
+      permissionOverwrites,
+      reason: "Syxth MMORPG private trade room created.",
+    })
+    .catch((error) => {
+      console.error("Failed to create private trade channel:", error);
+      return null;
+    });
 
   return channel;
 }
@@ -70,11 +104,15 @@ async function deleteTradeChannel(guild, channelId) {
 
   if (!channel) return false;
 
-  await channel
+  const deleted = await channel
     .delete("Syxth MMORPG trade room cleanup.")
-    .catch(() => null);
+    .then(() => true)
+    .catch((error) => {
+      console.error("Failed to delete trade channel:", error);
+      return false;
+    });
 
-  return true;
+  return deleted;
 }
 
 async function resetTradeConfirmations(tradeId) {
@@ -86,6 +124,14 @@ async function resetTradeConfirmations(tradeId) {
   }
 
   const tradeRef = db.collection("trades").doc(tradeId);
+  const tradeDoc = await tradeRef.get();
+
+  if (!tradeDoc.exists) {
+    return {
+      ok: false,
+      message: "Trade no longer exists.",
+    };
+  }
 
   await tradeRef.update({
     player1Confirmed: false,

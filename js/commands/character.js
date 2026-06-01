@@ -1,7 +1,11 @@
 const { EmbedBuilder } = require("discord.js");
 const { db } = require("../../firebase/firebase");
 const { getQualityEmoji } = require("../utils/qualitySystem");
-const { getReviveRemainingSeconds, resolvePlayerRevive } = require("../utils/reviveSystem");
+const {
+  getReviveRemainingSeconds,
+  resolvePlayerRevive,
+} = require("../utils/reviveSystem");
+const balanceConfig = require("../data/balanceConfig");
 
 function getDefaultEquipment() {
   return {
@@ -15,21 +19,7 @@ function getDefaultEquipment() {
 }
 
 function calculatePower(player) {
-  const attack = Number(player.attack || 0);
-  const defense = Number(player.defense || 0);
-  const maxHp = Number(player.maxHp || 0);
-  const dodge = Number(player.dodge || 0);
-  const crit = Number(player.crit || 0);
-  const level = Number(player.level || 1);
-
-  return Math.floor(
-    attack +
-      defense * 1.5 +
-      maxHp * 0.2 +
-      dodge * 10 +
-      crit * 10 +
-      level * 100
-  );
+  return balanceConfig.calculatePower(player);
 }
 
 function countEquippedItems(equipment = {}) {

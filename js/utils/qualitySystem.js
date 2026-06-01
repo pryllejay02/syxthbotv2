@@ -1,25 +1,6 @@
-const QUALITIES = {
-  Common: {
-    emoji: "🟢",
-    color: "#22C55E",
-    statMultiplier: 1,
-    priceMultiplier: 1,
-  },
+const balanceConfig = require("../data/balanceConfig");
 
-  Rare: {
-    emoji: "🔵",
-    color: "#3B82F6",
-    statMultiplier: 1.5,
-    priceMultiplier: 2,
-  },
-
-  Legendary: {
-    emoji: "🟠",
-    color: "#F59E0B",
-    statMultiplier: 2.5,
-    priceMultiplier: 5,
-  },
-};
+const QUALITIES = balanceConfig.quality;
 
 function getQualityData(quality = "Common") {
   return QUALITIES[quality] || QUALITIES.Common;
@@ -27,6 +8,18 @@ function getQualityData(quality = "Common") {
 
 function getQualityEmoji(quality = "Common") {
   return getQualityData(quality).emoji;
+}
+
+function getQualityColor(quality = "Common") {
+  return getQualityData(quality).color;
+}
+
+function getQualityStatMultiplier(quality = "Common") {
+  return getQualityData(quality).statMultiplier || 1;
+}
+
+function getQualityPriceMultiplier(quality = "Common") {
+  return getQualityData(quality).priceMultiplier || 1;
 }
 
 function formatItemName(item) {
@@ -37,5 +30,8 @@ module.exports = {
   QUALITIES,
   getQualityData,
   getQualityEmoji,
+  getQualityColor,
+  getQualityStatMultiplier,
+  getQualityPriceMultiplier,
   formatItemName,
 };

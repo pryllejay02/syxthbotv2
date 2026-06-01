@@ -4,8 +4,43 @@ const hitCommand = require("../commands/hit");
 const { isCreator } = require("../utils/adminUtils");
 const { db } = require("../../firebase/firebase");
 const { resolvePlayerRevive } = require("../utils/reviveSystem");
+const balanceConfig = require("../data/balanceConfig");
 
 const autoPlayers = new Map();
+
+function getAutoHuntIntervalMs() {
+  const envInterval = Number(process.env.AUTO_HUNT_INTERVAL_MS || 0);
+  const fallbackInterval = Number(balanceConfig.commandCooldowns?.hunt || 3000);
+
+  return Math.max(2500, envInterval || fallbackInterval);
+}
+
+function stopAutoHunt(userId) {
+  const timer = autoPlayers.get(userId);
+
+  if (!timer) return false;
+
+  clearInterval(timer.interval);
+  autoPlayers.delete(userId);
+
+  return true;
+}
+
+async function getLatestPlayer(playerRef) {
+  const playerDoc = await playerRef.get();
+
+  if (!playerDoc.exists) {
+    return {
+      exists: false,
+      player: null,
+    };
+  }
+
+  return {
+    exists: true,
+    player: playerDoc.data(),
+  };
+}
 
 module.exports = async function autoplay(message, args = []) {
   // Auto Hunt is controlled by .env
@@ -31,45 +66,54 @@ module.exports = async function autoplay(message, args = []) {
   }
 
   if (action === "status") {
+    const timer = autoPlayers.get(userId);
+
+    if (!timer) {
+      return message.reply("❌ Auto Hunt: OFF");
+    }
+
     return message.reply(
-      autoPlayers.has(userId)
-        ? "✅ Auto Hunt: ON"
-        : "❌ Auto Hunt: OFF"
+      `✅ Auto Hunt: ON\n\n` +
+        `📍 Channel: <#${timer.channelId}>\n` +
+        `⏱️ Interval: **${timer.intervalMs}ms**`
     );
   }
 
   if (action === "off") {
-    const timer = autoPlayers.get(userId);
+    const stopped = stopAutoHunt(userId);
 
-    if (timer) {
-      clearInterval(timer.interval);
-      autoPlayers.delete(userId);
-    }
-
-    return message.reply("🛑 Auto Hunt OFF");
+    return message.reply(
+      stopped ? "🛑 Auto Hunt OFF" : "ℹ️ Auto Hunt is already OFF."
+    );
   }
 
   if (autoPlayers.has(userId)) {
-    return message.reply("⚠️ Already active.");
+    return message.reply("⚠️ Auto Hunt is already active.");
   }
 
   const playerRef = db.collection("players").doc(userId);
-  const playerDoc = await playerRef.get();
+  const playerResult = await getLatestPlayer(playerRef);
 
-  if (!playerDoc.exists) {
+  if (!playerResult.exists) {
     return message.reply("❌ You don’t have a character yet. Use `!s start` first.");
   }
 
-  const player = playerDoc.data();
+  const player = playerResult.player;
 
-  // Optional safety: Auto Hunt should run only inside your private MMORPG room.
+  // Safety: Auto Hunt should run only inside your private MMORPG room.
   if (player.privateChannelId && message.channel.id !== player.privateChannelId) {
     return message.reply(
       `❌ Please start Auto Hunt inside your private room: <#${player.privateChannelId}>`
     );
   }
 
-  await message.reply("🤖 Auto Hunt ON");
+  const intervalMs = getAutoHuntIntervalMs();
+
+  await message.reply(
+    `🤖 Auto Hunt ON\n\n` +
+      `⏱️ Interval: **${intervalMs}ms**\n` +
+      `🛑 Stop: \`!s creator off\``
+  );
 
   const state = {
     running: false,
@@ -81,15 +125,35 @@ module.exports = async function autoplay(message, args = []) {
     state.running = true;
 
     try {
-      const latestPlayerDoc = await playerRef.get();
+      const latestPlayerResult = await getLatestPlayer(playerRef);
 
-      if (!latestPlayerDoc.exists) {
-        clearInterval(interval);
-        autoPlayers.delete(userId);
+      if (!latestPlayerResult.exists) {
+        stopAutoHunt(userId);
+
+        await message.channel
+          .send("🛑 Auto Hunt stopped because your character data was not found.")
+          .catch(() => null);
+
         return;
       }
 
-      let latestPlayer = latestPlayerDoc.data();
+      let latestPlayer = latestPlayerResult.player;
+
+      if (
+        latestPlayer.privateChannelId &&
+        message.channel.id !== latestPlayer.privateChannelId
+      ) {
+        stopAutoHunt(userId);
+
+        await message.channel
+          .send(
+            `🛑 Auto Hunt stopped.\n\n` +
+              `Reason: Private room changed or this is no longer your MMORPG room.`
+          )
+          .catch(() => null);
+
+        return;
+      }
 
       // Auto Hunt bypasses commandHandler,
       // so revive recovery must also happen here.
@@ -115,9 +179,9 @@ module.exports = async function autoplay(message, args = []) {
       if (!battleDoc.exists) {
         await huntCommand(message);
 
-        await new Promise((resolve) =>
-          setTimeout(resolve, 500)
-        );
+        await new Promise((resolve) => {
+          setTimeout(resolve, 500);
+        });
       }
 
       const latestBattleDoc = await battleRef.get();
@@ -126,13 +190,20 @@ module.exports = async function autoplay(message, args = []) {
         await hitCommand(message);
       }
     } catch (error) {
-      console.error("AUTO ERROR:", error);
+      console.error("AUTO HUNT ERROR:", error);
     } finally {
       state.running = false;
     }
-  }, 2500);
+  }, intervalMs);
+
+  interval.unref?.();
 
   autoPlayers.set(userId, {
     interval,
+    intervalMs,
+    channelId: message.channel.id,
+    startedAt: new Date(),
   });
+
+  return null;
 };

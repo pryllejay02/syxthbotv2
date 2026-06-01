@@ -4,26 +4,28 @@ const {
   ADMIN_CHANNEL_ID,
 } = require("../data/adminConfig");
 
+function hasRole(member, roleId) {
+  if (!member || !roleId) return false;
+
+  return member.roles?.cache?.has(roleId) || false;
+}
+
 function isCreator(member) {
-  return member.roles.cache.has(
-    CREATOR_ROLE_ID
-  );
+  return hasRole(member, CREATOR_ROLE_ID);
 }
 
 function isAdmin(member) {
-  return (
-    isCreator(member) ||
-    member.roles.cache.has(
-      ADMIN_ROLE_ID
-    )
-  );
+  return isCreator(member) || hasRole(member, ADMIN_ROLE_ID);
 }
 
 function isAdminChannel(channelId) {
-  return channelId === ADMIN_CHANNEL_ID;
+  if (!channelId || !ADMIN_CHANNEL_ID) return false;
+
+  return String(channelId) === String(ADMIN_CHANNEL_ID);
 }
 
 module.exports = {
+  hasRole,
   isCreator,
   isAdmin,
   isAdminChannel,

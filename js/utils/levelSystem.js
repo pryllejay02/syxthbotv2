@@ -1,75 +1,44 @@
-const MAX_LEVEL = 99;
+const balanceConfig = require("../data/balanceConfig");
+
+const MAX_LEVEL = Number(
+  balanceConfig.MAX_LEVEL || balanceConfig.maxLevel || 99
+);
 
 function getRequiredExp(level) {
-  if (level >= MAX_LEVEL) return Infinity;
-
-  if (level <= 20) {
-    // Smoother early game: avoids forcing new players to grind too long before Lv.5.
-    return Math.floor(30 + level * 20 + level * level * 5);
-  }
-
-  if (level <= 50) {
-    return Math.floor(300 + level * 80 + level * level * 18);
-  }
-
-  if (level <= 80) {
-    return Math.floor(1000 + level * 120 + level * level * 25);
-  }
-
-  return Math.floor(2500 + level * 180 + level * level * 35);
+  return balanceConfig.getRequiredExp(level);
 }
 
-function getStatsGain(level) {
-  if (level <= 20) {
-    return {
-      maxHp: 12,
-      attack: 3,
-      defense: 2,
-      dodge: 0.2,
-      crit: 0.2,
-    };
-  }
+function getStatsGain(level, classId = "swordsman") {
+  return balanceConfig.getLevelStatGain(classId, level);
+}
 
-  if (level <= 50) {
-    return {
-      maxHp: 18,
-      attack: 4,
-      defense: 3,
-      dodge: 0.15,
-      crit: 0.15,
-    };
-  }
-
-  if (level <= 80) {
-    return {
-      maxHp: 25,
-      attack: 6,
-      defense: 4,
-      dodge: 0.1,
-      crit: 0.1,
-    };
-  }
-
+function normalizeBaseStats(baseStats = {}) {
   return {
-    maxHp: 35,
-    attack: 8,
-    defense: 6,
-    dodge: 0.05,
-    crit: 0.05,
+    attack: Number(baseStats.attack || 10),
+    defense: Number(baseStats.defense || 5),
+    maxHp: Number(baseStats.maxHp || 100),
+    dodge: Number(baseStats.dodge || 0),
+    crit: Number(baseStats.crit || 0),
   };
+}
+
+function getStartingBaseStats(player, level) {
+  if (player.baseStats) {
+    return normalizeBaseStats(player.baseStats);
+  }
+
+  return balanceConfig.getBaseStatsByClassLevel(
+    player.classId || "swordsman",
+    Number(level || 1)
+  );
 }
 
 function applyLevelUp(player, gainedExp) {
   let level = Number(player.level || 1);
   let exp = Number(player.exp || 0) + Number(gainedExp || 0);
 
-  const baseStats = player.baseStats || {
-  attack: Number(player.attack || 10),
-  defense: Number(player.defense || 5),
-  maxHp: Number(player.maxHp || 100),
-  dodge: Number(player.dodge || 0),
-  crit: Number(player.crit || 0),
-};
+  const classId = player.classId || "swordsman";
+  const baseStats = getStartingBaseStats(player, level);
 
   let baseAttack = Number(baseStats.attack || 10);
   let baseDefense = Number(baseStats.defense || 5);
@@ -86,13 +55,13 @@ function applyLevelUp(player, gainedExp) {
     levelUps++;
     leveledUp = true;
 
-    const gain = getStatsGain(level);
+    const gain = getStatsGain(level, classId);
 
-    baseAttack += gain.attack;
-    baseDefense += gain.defense;
-    baseMaxHp += gain.maxHp;
-    baseDodge += gain.dodge;
-    baseCrit += gain.crit;
+    baseAttack += Number(gain.attack || 0);
+    baseDefense += Number(gain.defense || 0);
+    baseMaxHp += Number(gain.maxHp || 0);
+    baseDodge += Number(gain.dodge || 0);
+    baseCrit += Number(gain.crit || 0);
   }
 
   if (level >= MAX_LEVEL) {
@@ -104,9 +73,9 @@ function applyLevelUp(player, gainedExp) {
     level,
     exp,
     baseStats: {
-      attack: baseAttack,
-      defense: baseDefense,
-      maxHp: baseMaxHp,
+      attack: Math.floor(baseAttack),
+      defense: Math.floor(baseDefense),
+      maxHp: Math.floor(baseMaxHp),
       dodge: Number(baseDodge.toFixed(2)),
       crit: Number(baseCrit.toFixed(2)),
     },

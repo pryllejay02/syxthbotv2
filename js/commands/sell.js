@@ -1,22 +1,91 @@
 const { db } = require("../../firebase/firebase");
 const { getQualityEmoji } = require("../utils/qualitySystem");
+const balanceConfig = require("../data/balanceConfig");
 
-function getSellPrice(item) {
+function getSellMultiplier(quality = "Common") {
+  if (typeof balanceConfig.getSellMultiplier === "function") {
+    return balanceConfig.getSellMultiplier(quality);
+  }
+
+  return (
+    balanceConfig.economy?.sellMultiplier?.[quality] ??
+    balanceConfig.economy?.sellMultiplier?.default ??
+    0.5
+  );
+}
+
+function getSellPrice(item = {}) {
   const basePrice = Number(item.price || 0);
+
   if (basePrice <= 0) return 0;
-  if (item.quality === "Rare") return Math.floor(basePrice * 0.75);
-  if (item.quality === "Legendary") return Math.floor(basePrice * 0.85);
-  return Math.floor(basePrice * 0.5);
+
+  const multiplier = getSellMultiplier(item.quality || "Common");
+
+  return Math.floor(basePrice * multiplier);
 }
 
 function canSellItem(item) {
   if (!item) return false;
   if (item.quality === "Starter") return false;
+  if (item.isStarter) return false;
+
   return getSellPrice(item) > 0;
 }
 
-function sellableQuantity(item) {
-  return Number(item.quantity || 1);
+function getItemQuantity(item) {
+  return Math.max(1, Number(item.quantity || 1));
+}
+
+function parseSellQuantity(value, ownedQuantity) {
+  if (String(value || "").toLowerCase() === "all") {
+    return ownedQuantity;
+  }
+
+  const quantity = Number(value || 1);
+
+  if (!Number.isInteger(quantity)) return null;
+  if (quantity <= 0) return null;
+  if (quantity > ownedQuantity) return null;
+
+  return quantity;
+}
+
+function getQualityFilter(value) {
+  const filter = String(value || "").toLowerCase();
+
+  if (!filter) return null;
+  if (filter === "common") return "Common";
+  if (filter === "rare") return "Rare";
+  if (filter === "legendary") return "Legendary";
+
+  return "invalid";
+}
+
+function getBulkSellSummary() {
+  return {
+    totalGold: 0,
+    totalItemsSold: 0,
+    commonSold: 0,
+    rareSold: 0,
+    legendarySold: 0,
+  };
+}
+
+function addToBulkSummary(summary, item, quantity, earnedGold) {
+  const quality = item.quality || "Common";
+
+  summary.totalGold += earnedGold;
+  summary.totalItemsSold += quantity;
+
+  if (quality === "Rare") {
+    summary.rareSold += quantity;
+  } else if (quality === "Legendary") {
+    summary.legendarySold += quantity;
+  } else {
+    summary.commonSold += quantity;
+  }
+
+  return summary;
 }
 
 module.exports = async function sellCommand(message, args = []) {
@@ -34,7 +103,8 @@ module.exports = async function sellCommand(message, args = []) {
         "`!s sell archer_iron_weapon all`\n" +
         "`!s sell all`\n" +
         "`!s sell all common`\n" +
-        "`!s sell all rare`"
+        "`!s sell all rare`\n" +
+        "`!s sell all legendary`"
     );
   }
 
@@ -49,7 +119,9 @@ module.exports = async function sellCommand(message, args = []) {
     }
 
     const player = playerDoc.data();
-    const inventory = [...(player.inventory || [])];
+    const inventory = Array.isArray(player.inventory)
+      ? [...player.inventory]
+      : [];
 
     if (inventory.length === 0) {
       return {
@@ -59,16 +131,9 @@ module.exports = async function sellCommand(message, args = []) {
     }
 
     if (action === "all") {
-      const qualityFilter =
-        secondArg === "common"
-          ? "Common"
-          : secondArg === "rare"
-          ? "Rare"
-          : secondArg === "legendary"
-          ? "Legendary"
-          : null;
+      const qualityFilter = getQualityFilter(secondArg);
 
-      if (secondArg && !qualityFilter) {
+      if (qualityFilter === "invalid") {
         return {
           ok: false,
           message:
@@ -80,12 +145,7 @@ module.exports = async function sellCommand(message, args = []) {
         };
       }
 
-      let totalGold = 0;
-      let totalItemsSold = 0;
-      let commonSold = 0;
-      let rareSold = 0;
-      let legendarySold = 0;
-
+      const summary = getBulkSellSummary();
       const remainingInventory = [];
 
       inventory.forEach((item) => {
@@ -97,41 +157,35 @@ module.exports = async function sellCommand(message, args = []) {
           return;
         }
 
-        const quantity = sellableQuantity(item);
+        const quantity = getItemQuantity(item);
         const sellPrice = getSellPrice(item);
         const earnedGold = sellPrice * quantity;
 
-        totalGold += earnedGold;
-        totalItemsSold += quantity;
-
-        if (itemQuality === "Rare") rareSold += quantity;
-        else if (itemQuality === "Legendary") legendarySold += quantity;
-        else commonSold += quantity;
+        addToBulkSummary(summary, item, quantity, earnedGold);
       });
 
-      if (totalItemsSold <= 0) {
+      if (summary.totalItemsSold <= 0) {
         return {
           ok: false,
           message: "❌ No sellable items found.",
         };
       }
 
-      const newGold = Number(player.gold || 0) + totalGold;
+      const oldGold = Number(player.gold || 0);
+      const newGold = oldGold + summary.totalGold;
 
       transaction.update(playerRef, {
         gold: newGold,
         inventory: remainingInventory,
+        updatedAt: new Date(),
       });
 
       return {
         ok: true,
         bulk: true,
-        totalGold,
-        totalItemsSold,
-        commonSold,
-        rareSold,
-        legendarySold,
+        oldGold,
         newGold,
+        ...summary,
       };
     }
 
@@ -139,7 +193,9 @@ module.exports = async function sellCommand(message, args = []) {
     const quantityArg = secondArg || "1";
 
     const itemIndex = inventory.findIndex(
-      (item) => item.id.toLowerCase() === itemId.toLowerCase()
+      (item) =>
+        item.id &&
+        String(item.id).toLowerCase() === itemId
     );
 
     if (itemIndex === -1) {
@@ -154,33 +210,36 @@ module.exports = async function sellCommand(message, args = []) {
     if (!canSellItem(item)) {
       return {
         ok: false,
-        message: "❌ This item cannot be sold.",
+        message:
+          "❌ This item cannot be sold.\n\n" +
+          "Starter items and items with no sell value cannot be sold.",
       };
     }
 
-    const ownedQuantity = sellableQuantity(item);
-    const quantity = quantityArg === "all" ? ownedQuantity : parseInt(quantityArg) || 1;
+    const ownedQuantity = getItemQuantity(item);
+    const quantity = parseSellQuantity(quantityArg, ownedQuantity);
 
-    if (quantity <= 0) {
+    if (!quantity) {
       return {
         ok: false,
-        message: "❌ Quantity must be greater than 0.",
-      };
-    }
-
-    if (ownedQuantity < quantity) {
-      return {
-        ok: false,
-        message: `❌ You only have **${ownedQuantity}x** of this item.`,
+        message:
+          `❌ Invalid quantity.\n\n` +
+          `You have **${ownedQuantity}x** of this item.\n` +
+          `Use a number from **1-${ownedQuantity}** or use \`all\`.`,
       };
     }
 
     const sellPrice = getSellPrice(item);
     const totalGold = sellPrice * quantity;
-    const newGold = Number(player.gold || 0) + totalGold;
+    const oldGold = Number(player.gold || 0);
+    const newGold = oldGold + totalGold;
+    const remainingQuantity = ownedQuantity - quantity;
 
-    if (ownedQuantity > quantity) {
-      inventory[itemIndex].quantity = ownedQuantity - quantity;
+    if (remainingQuantity > 0) {
+      inventory[itemIndex] = {
+        ...item,
+        quantity: remainingQuantity,
+      };
     } else {
       inventory.splice(itemIndex, 1);
     }
@@ -188,6 +247,7 @@ module.exports = async function sellCommand(message, args = []) {
     transaction.update(playerRef, {
       gold: newGold,
       inventory,
+      updatedAt: new Date(),
     });
 
     return {
@@ -197,7 +257,9 @@ module.exports = async function sellCommand(message, args = []) {
       quantity,
       sellPrice,
       totalGold,
+      oldGold,
       newGold,
+      remainingQuantity,
     };
   });
 
@@ -211,8 +273,9 @@ module.exports = async function sellCommand(message, args = []) {
         `📦 Items Sold: **${result.totalItemsSold}**\n` +
         `🟢 Common Sold: **${result.commonSold}**\n` +
         `🔵 Rare Sold: **${result.rareSold}**\n` +
-        `🟠 Legendary Sold: **${result.legendarySold}**\n` +
+        `🟠 Legendary Sold: **${result.legendarySold}**\n\n` +
         `💰 Gold Earned: **${result.totalGold}**\n` +
+        `🪙 Old Gold: **${result.oldGold}**\n` +
         `🪙 New Gold Balance: **${result.newGold}**`
     );
   }
@@ -224,6 +287,8 @@ module.exports = async function sellCommand(message, args = []) {
       `Quality: **${qualityEmoji} ${result.item.quality || "Common"}**\n` +
       `💰 Sell Price Each: **${result.sellPrice} Gold**\n` +
       `💰 Gold Earned: **${result.totalGold} Gold**\n` +
-      `🪙 New Gold Balance: **${result.newGold}**`
+      `🪙 Old Gold: **${result.oldGold}**\n` +
+      `🪙 New Gold Balance: **${result.newGold}**\n` +
+      `📦 Remaining Quantity: **${Math.max(0, result.remainingQuantity)}**`
   );
 };

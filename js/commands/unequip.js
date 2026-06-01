@@ -1,6 +1,7 @@
 const { db } = require("../../firebase/firebase");
 const { calculateTotalStats } = require("../utils/statSystem");
 const { getQualityEmoji } = require("../utils/qualitySystem");
+const balanceConfig = require("../data/balanceConfig");
 
 function getDefaultEquipment() {
   return {
@@ -11,6 +12,31 @@ function getDefaultEquipment() {
     pants: null,
     boots: null,
   };
+}
+
+function getBaseStats(player) {
+  if (player.baseStats) {
+    return {
+      attack: Number(player.baseStats.attack || 10),
+      defense: Number(player.baseStats.defense || 5),
+      maxHp: Number(player.baseStats.maxHp || 100),
+      dodge: Number(player.baseStats.dodge || 0),
+      crit: Number(player.baseStats.crit || 0),
+    };
+  }
+
+  return balanceConfig.getBaseStatsByClassLevel(
+    player.classId || "swordsman",
+    Number(player.level || 1)
+  );
+}
+
+function shouldReturnItemToInventory(item) {
+  if (!item) return false;
+  if (item.quality === "Starter") return false;
+  if (item.isStarter) return false;
+
+  return true;
 }
 
 module.exports = async function unequipCommand(message, args = []) {
@@ -40,6 +66,7 @@ module.exports = async function unequipCommand(message, args = []) {
     }
 
     const player = playerDoc.data();
+
     const equipment = {
       ...getDefaultEquipment(),
       ...(player.equipment || {}),
@@ -54,10 +81,11 @@ module.exports = async function unequipCommand(message, args = []) {
       };
     }
 
-    if (item.quality === "Starter") {
+    if (item.quality === "Starter" || item.isStarter) {
       return {
         ok: false,
-        message: "❌ You cannot unequip your starter weapon unless you equip another weapon first.",
+        message:
+          "❌ You cannot unequip your starter weapon unless you equip another weapon first.",
       };
     }
 
@@ -67,32 +95,38 @@ module.exports = async function unequipCommand(message, args = []) {
 
     const inventory = [...(player.inventory || [])];
 
-    const existingItemIndex = inventory.findIndex((invItem) => invItem.id === item.id);
+    if (shouldReturnItemToInventory(item)) {
+      const existingItemIndex = inventory.findIndex(
+        (invItem) =>
+          invItem.id === item.id &&
+          JSON.stringify(invItem.stats || {}) ===
+            JSON.stringify(item.stats || {})
+      );
 
-    if (existingItemIndex !== -1) {
-      inventory[existingItemIndex].quantity =
-        Number(inventory[existingItemIndex].quantity || 0) + 1;
-    } else {
-      inventory.push({
-        ...item,
-        equipped: false,
-        isEquipped: false,
-        quantity: 1,
-      });
+      if (existingItemIndex !== -1) {
+        inventory[existingItemIndex].equipped = false;
+        inventory[existingItemIndex].isEquipped = false;
+        inventory[existingItemIndex].quantity =
+          Number(inventory[existingItemIndex].quantity || 0) + 1;
+      } else {
+        inventory.push({
+          ...item,
+          equipped: false,
+          isEquipped: false,
+          quantity: 1,
+        });
+      }
     }
 
-    const baseStats = player.baseStats || {
-      attack: Number(player.attack || 10),
-      defense: Number(player.defense || 5),
-      maxHp: Number(player.maxHp || 100),
-      dodge: Number(player.dodge || 0),
-      crit: Number(player.crit || 0),
-    };
-
+    const baseStats = getBaseStats(player);
     const totalStats = calculateTotalStats(baseStats, equipment);
 
     const currentHp = Number(player.hp || totalStats.maxHp);
-    const newHp = Math.min(currentHp, totalStats.maxHp);
+
+    const newHp =
+      currentHp <= 0
+        ? 0
+        : Math.min(currentHp, Number(totalStats.maxHp || 100));
 
     transaction.update(playerRef, {
       baseStats,
@@ -104,6 +138,7 @@ module.exports = async function unequipCommand(message, args = []) {
       dodge: totalStats.dodge,
       crit: totalStats.crit,
       hp: newHp,
+      updatedAt: new Date(),
     });
 
     return {
@@ -112,6 +147,7 @@ module.exports = async function unequipCommand(message, args = []) {
       slot,
       qualityEmoji,
       totalStats,
+      newHp,
     };
   });
 
@@ -122,9 +158,9 @@ module.exports = async function unequipCommand(message, args = []) {
   return message.reply(
     `${result.item.emoji || "📦"} Unequipped **${result.item.name}** from **${result.slot}**.\n\n` +
       `Quality: **${result.qualityEmoji} ${result.item.quality || "Common"}**\n` +
+      `❤️ HP: ${result.newHp}/${result.totalStats.maxHp}\n` +
       `⚔️ Attack: ${result.totalStats.attack}\n` +
       `🛡️ Defense: ${result.totalStats.defense}\n` +
-      `❤️ Max HP: ${result.totalStats.maxHp}\n` +
       `💨 Dodge: ${Number(result.totalStats.dodge || 0).toFixed(1)}%\n` +
       `💥 Crit: ${Number(result.totalStats.crit || 0).toFixed(1)}%`
   );

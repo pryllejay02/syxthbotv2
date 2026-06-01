@@ -16,19 +16,55 @@ const {
   getTradeSide,
 } = require("../services/tradeService");
 
-function removeItemFromInventory(inventory, itemId, quantity) {
+function normalizeId(value) {
+  return String(value || "").toLowerCase();
+}
+
+function getDeleteChannelDelayMs() {
+  return Number(tradeConfig.deleteChannelDelayMs || 5000);
+}
+
+function getInviteExpireMs() {
+  return Number(tradeConfig.inviteExpireMs || 120000);
+}
+
+function isValidQuantity(quantity) {
+  return Number.isInteger(quantity) && quantity > 0;
+}
+
+function parseQuantity(value, fallback = 1) {
+  const quantity = Number(value || fallback);
+
+  if (!isValidQuantity(quantity)) return null;
+
+  return quantity;
+}
+
+function parseGoldAmount(value) {
+  const amount = Number(value || 0);
+
+  if (!Number.isInteger(amount)) return null;
+  if (amount < 0) return null;
+
+  return amount;
+}
+
+function removeItemFromInventory(inventory = [], itemId, quantity) {
   const index = inventory.findIndex(
-    (item) =>
-      item.id &&
-      item.id.toLowerCase() === String(itemId).toLowerCase()
+    (item) => item.id && normalizeId(item.id) === normalizeId(itemId)
   );
 
   if (index === -1) return false;
 
   const ownedQty = Number(inventory[index].quantity || 1);
 
+  if (ownedQty < quantity) return false;
+
   if (ownedQty > quantity) {
-    inventory[index].quantity = ownedQty - quantity;
+    inventory[index] = {
+      ...inventory[index],
+      quantity: ownedQty - quantity,
+    };
   } else {
     inventory.splice(index, 1);
   }
@@ -36,7 +72,7 @@ function removeItemFromInventory(inventory, itemId, quantity) {
   return true;
 }
 
-function addItemToInventory(inventory, item) {
+function addItemToInventory(inventory = [], item) {
   const existingIndex = inventory.findIndex(
     (invItem) =>
       (invItem.baseItemId || invItem.id) === (item.baseItemId || item.id) &&
@@ -54,15 +90,17 @@ function addItemToInventory(inventory, item) {
       quantity: Number(item.quantity || 1),
     });
   }
+
+  return inventory;
 }
 
-function hasEnoughInventory(inventory, tradeItems = []) {
+function hasEnoughInventory(inventory = [], tradeItems = []) {
   for (const tradeItem of tradeItems) {
     const invItem = inventory.find(
       (item) =>
         item.id &&
         tradeItem.id &&
-        item.id.toLowerCase() === tradeItem.id.toLowerCase()
+        normalizeId(item.id) === normalizeId(tradeItem.id)
     );
 
     if (!invItem) return false;
@@ -76,49 +114,56 @@ function hasEnoughInventory(inventory, tradeItems = []) {
   return true;
 }
 
-function isItemEquipped(player, itemId) {
+function isItemEquipped(player = {}, itemId) {
   const equipment = player.equipment || {};
 
   return Object.values(equipment).some(
-    (item) =>
-      item &&
-      item.id &&
-      item.id.toLowerCase() === String(itemId).toLowerCase()
+    (item) => item && item.id && normalizeId(item.id) === normalizeId(itemId)
   );
 }
 
-function hasEquippedTradeItem(player, tradeItems = []) {
+function hasEquippedTradeItem(player = {}, tradeItems = []) {
   return tradeItems.some((item) => isItemEquipped(player, item.id));
-}
-
-function isValidQuantity(quantity) {
-  return Number.isInteger(quantity) && quantity > 0;
 }
 
 function getOfferQuantity(items = [], itemId) {
   return items
     .filter(
-      (item) =>
-        item.id &&
-        item.id.toLowerCase() === String(itemId).toLowerCase()
+      (item) => item.id && normalizeId(item.id) === normalizeId(itemId)
     )
-    .reduce(
-      (total, item) => total + Number(item.quantity || 1),
-      0
-    );
+    .reduce((total, item) => total + Number(item.quantity || 1), 0);
+}
+
+function resetConfirmationsPayload() {
+  return {
+    status: "active",
+    player1Confirmed: false,
+    player2Confirmed: false,
+    updatedAt: new Date(),
+  };
+}
+
+function getUpdatedTradeWithReset(latestTrade, side, updates = {}) {
+  return {
+    ...latestTrade,
+    ...updates,
+    player1Confirmed: false,
+    player2Confirmed: false,
+    updatedAt: new Date(),
+    [side.itemsKey]: updates[side.itemsKey] || latestTrade[side.itemsKey] || [],
+  };
+}
+
+async function scheduleTradeChannelDelete(guild, channelId) {
+  setTimeout(async () => {
+    await deleteTradeChannel(guild, channelId).catch(() => null);
+  }, getDeleteChannelDelayMs()).unref?.();
 }
 
 async function completeTrade(message, trade) {
   const tradeRef = db.collection("trades").doc(trade.id);
   const player1Ref = db.collection("players").doc(trade.player1Id);
   const player2Ref = db.collection("players").doc(trade.player2Id);
-
-  const resetPayload = {
-    status: "active",
-    player1Confirmed: false,
-    player2Confirmed: false,
-    updatedAt: new Date(),
-  };
 
   const result = await db.runTransaction(async (transaction) => {
     const latestTradeDoc = await transaction.get(tradeRef);
@@ -166,7 +211,7 @@ async function completeTrade(message, trade) {
     }
 
     if (!player1Doc.exists || !player2Doc.exists) {
-      transaction.update(tradeRef, resetPayload);
+      transaction.update(tradeRef, resetConfirmationsPayload());
 
       return {
         ok: false,
@@ -178,8 +223,13 @@ async function completeTrade(message, trade) {
     const player1 = player1Doc.data();
     const player2 = player2Doc.data();
 
-    const p1Inventory = [...(player1.inventory || [])];
-    const p2Inventory = [...(player2.inventory || [])];
+    const p1Inventory = Array.isArray(player1.inventory)
+      ? [...player1.inventory]
+      : [];
+
+    const p2Inventory = Array.isArray(player2.inventory)
+      ? [...player2.inventory]
+      : [];
 
     const p1Gold = Number(player1.gold || 0);
     const p2Gold = Number(player2.gold || 0);
@@ -188,7 +238,7 @@ async function completeTrade(message, trade) {
     const player2GoldOffer = Number(latestTrade.player2Gold || 0);
 
     if (p1Gold < player1GoldOffer) {
-      transaction.update(tradeRef, resetPayload);
+      transaction.update(tradeRef, resetConfirmationsPayload());
 
       return {
         ok: false,
@@ -198,7 +248,7 @@ async function completeTrade(message, trade) {
     }
 
     if (p2Gold < player2GoldOffer) {
-      transaction.update(tradeRef, resetPayload);
+      transaction.update(tradeRef, resetConfirmationsPayload());
 
       return {
         ok: false,
@@ -208,7 +258,7 @@ async function completeTrade(message, trade) {
     }
 
     if (!hasEnoughInventory(p1Inventory, latestTrade.player1Items || [])) {
-      transaction.update(tradeRef, resetPayload);
+      transaction.update(tradeRef, resetConfirmationsPayload());
 
       return {
         ok: false,
@@ -218,7 +268,7 @@ async function completeTrade(message, trade) {
     }
 
     if (!hasEnoughInventory(p2Inventory, latestTrade.player2Items || [])) {
-      transaction.update(tradeRef, resetPayload);
+      transaction.update(tradeRef, resetConfirmationsPayload());
 
       return {
         ok: false,
@@ -228,7 +278,7 @@ async function completeTrade(message, trade) {
     }
 
     if (hasEquippedTradeItem(player1, latestTrade.player1Items || [])) {
-      transaction.update(tradeRef, resetPayload);
+      transaction.update(tradeRef, resetConfirmationsPayload());
 
       return {
         ok: false,
@@ -238,7 +288,7 @@ async function completeTrade(message, trade) {
     }
 
     if (hasEquippedTradeItem(player2, latestTrade.player2Items || [])) {
-      transaction.update(tradeRef, resetPayload);
+      transaction.update(tradeRef, resetConfirmationsPayload());
 
       return {
         ok: false,
@@ -248,23 +298,55 @@ async function completeTrade(message, trade) {
     }
 
     for (const item of latestTrade.player1Items || []) {
-      removeItemFromInventory(p1Inventory, item.id, Number(item.quantity || 1));
+      const removed = removeItemFromInventory(
+        p1Inventory,
+        item.id,
+        Number(item.quantity || 1)
+      );
+
+      if (!removed) {
+        transaction.update(tradeRef, resetConfirmationsPayload());
+
+        return {
+          ok: false,
+          message:
+            "❌ Failed to remove Player 1 item during trade. Confirmations reset.",
+        };
+      }
+
       addItemToInventory(p2Inventory, item);
     }
 
     for (const item of latestTrade.player2Items || []) {
-      removeItemFromInventory(p2Inventory, item.id, Number(item.quantity || 1));
+      const removed = removeItemFromInventory(
+        p2Inventory,
+        item.id,
+        Number(item.quantity || 1)
+      );
+
+      if (!removed) {
+        transaction.update(tradeRef, resetConfirmationsPayload());
+
+        return {
+          ok: false,
+          message:
+            "❌ Failed to remove Player 2 item during trade. Confirmations reset.",
+        };
+      }
+
       addItemToInventory(p1Inventory, item);
     }
 
     transaction.update(player1Ref, {
       inventory: p1Inventory,
       gold: p1Gold - player1GoldOffer + player2GoldOffer,
+      updatedAt: new Date(),
     });
 
     transaction.update(player2Ref, {
       inventory: p2Inventory,
       gold: p2Gold - player2GoldOffer + player1GoldOffer,
+      updatedAt: new Date(),
     });
 
     transaction.delete(tradeRef);
@@ -285,14 +367,18 @@ async function completeTrade(message, trade) {
       `This trade room will be deleted shortly.`
   );
 
-  setTimeout(async () => {
-    await deleteTradeChannel(message.guild, result.trade.channelId);
-  }, tradeConfig.deleteChannelDelayMs).unref?.();
+  await scheduleTradeChannelDelete(message.guild, result.trade.channelId);
+
+  return null;
 }
 
 module.exports = async function tradeCommand(message, args = []) {
   const subCommand = String(args[0] || "").toLowerCase();
   const userId = message.author.id;
+
+  if (!message.guild) {
+    return message.reply("❌ Trade commands can only be used inside a server.");
+  }
 
   if (!subCommand || message.mentions.users.size > 0) {
     if (message.channel.id !== tradeConfig.createTradeChannelId) {
@@ -316,6 +402,10 @@ module.exports = async function tradeCommand(message, args = []) {
       return message.reply("❌ Both players must have a character.");
     }
 
+    if (senderPlayer.world?.id !== targetPlayer.world?.id) {
+      return message.reply("❌ You can only trade with players in the same world.");
+    }
+
     const senderActiveTrade = await findActiveTrade(userId);
     const targetActiveTrade = await findActiveTrade(targetUser.id);
 
@@ -324,7 +414,7 @@ module.exports = async function tradeCommand(message, args = []) {
     }
 
     const tradeRef = db.collection("trades").doc();
-    const expiresAt = Date.now() + tradeConfig.inviteExpireMs;
+    const expiresAt = Date.now() + getInviteExpireMs();
 
     await tradeRef.set({
       tradeId: tradeRef.id,
@@ -340,19 +430,23 @@ module.exports = async function tradeCommand(message, args = []) {
       player2Confirmed: false,
       status: "pending",
       channelId: null,
+      worldId: senderPlayer.world?.id || null,
       createdAt: new Date(),
       updatedAt: new Date(),
       expiresAt,
     });
 
+    const inviteSeconds = Math.ceil(getInviteExpireMs() / 1000);
+
     const inviteMessage = await message.reply(
       `🤝 <@${userId}> wants to trade with <@${targetUser.id}>.\n\n` +
-        `<@${targetUser.id}>, type \`!s trade accept\` within **2 minutes** to accept.\n` +
+        `<@${targetUser.id}>, type \`!s trade accept\` within **${inviteSeconds} seconds** to accept.\n` +
         `You can also type \`!s trade decline\`.`
     );
 
     setTimeout(async () => {
       const latestDoc = await tradeRef.get();
+
       if (!latestDoc.exists) return;
 
       const latestTrade = latestDoc.data();
@@ -364,9 +458,9 @@ module.exports = async function tradeCommand(message, args = []) {
           .reply("⏳ Trade invitation expired. No private trade room was created.")
           .catch(() => null);
       }
-    }, tradeConfig.inviteExpireMs).unref?.();
+    }, getInviteExpireMs()).unref?.();
 
-    return;
+    return null;
   }
 
   if (subCommand === "accept") {
@@ -387,6 +481,10 @@ module.exports = async function tradeCommand(message, args = []) {
     }
 
     const channel = await createPrivateTradeChannel(message, activeTrade);
+
+    if (!channel) {
+      return message.reply("❌ Failed to create private trade room.");
+    }
 
     await db.collection("trades").doc(activeTrade.id).update({
       status: "active",
@@ -447,13 +545,13 @@ module.exports = async function tradeCommand(message, args = []) {
 
   if (subCommand === "add") {
     const itemId = args[1];
-    const quantity = Number(args[2] || 1);
+    const quantity = parseQuantity(args[2], 1);
 
     if (!itemId) {
       return message.reply("❌ Usage: `!s trade add <item_id> <qty>`");
     }
 
-    if (!isValidQuantity(quantity)) {
+    if (!quantity) {
       return message.reply("❌ Quantity must be a whole number greater than 0.");
     }
 
@@ -500,8 +598,6 @@ module.exports = async function tradeCommand(message, args = []) {
       }
 
       const player = playerDoc.data();
-      const inventory = player.inventory || [];
-
       const item = findInventoryItem(player, itemId);
 
       if (!item) {
@@ -620,9 +716,7 @@ module.exports = async function tradeCommand(message, args = []) {
       const currentItems = latestTrade[latestSide.itemsKey] || [];
 
       const updatedItems = currentItems.filter(
-        (item) =>
-          item.id &&
-          item.id.toLowerCase() !== String(itemId).toLowerCase()
+        (item) => item.id && normalizeId(item.id) !== normalizeId(itemId)
       );
 
       if (updatedItems.length === currentItems.length) {
@@ -663,10 +757,12 @@ module.exports = async function tradeCommand(message, args = []) {
   }
 
   if (subCommand === "gold") {
-    const amount = Number(args[1] || 0);
+    const amount = parseGoldAmount(args[1]);
 
-    if (!Number.isInteger(amount) || amount < 0) {
-      return message.reply("❌ Gold amount must be a whole number and cannot be negative.");
+    if (amount === null) {
+      return message.reply(
+        "❌ Gold amount must be a whole number and cannot be negative."
+      );
     }
 
     const tradeRef = db.collection("trades").doc(activeTrade.id);
@@ -830,11 +926,9 @@ module.exports = async function tradeCommand(message, args = []) {
       "🛑 Trade cancelled. This channel will be deleted shortly."
     );
 
-    setTimeout(async () => {
-      await deleteTradeChannel(message.guild, channelId);
-    }, tradeConfig.deleteChannelDelayMs).unref?.();
+    await scheduleTradeChannelDelete(message.guild, channelId);
 
-    return;
+    return null;
   }
 
   return message.reply(

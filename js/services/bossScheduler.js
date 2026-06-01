@@ -3,8 +3,12 @@ const partyConfig = require("../data/partyConfig");
 const { spawnBoss } = require("./bossService");
 
 const TIMEZONE = "Asia/Manila";
+const SCHEDULER_INTERVAL_MS = Number(
+  process.env.BOSS_SCHEDULER_INTERVAL_MS || 30 * 1000
+);
 
 let lastSpawnKey = null;
+let schedulerInterval = null;
 
 function getPHTimeParts() {
   const now = new Date();
@@ -20,7 +24,6 @@ function getPHTimeParts() {
   });
 
   const parts = formatter.formatToParts(now);
-
   const values = {};
 
   parts.forEach((part) => {
@@ -35,44 +38,117 @@ function getPHTimeParts() {
   };
 }
 
-async function runBossScheduler(client) {
-  const { date, time } = getPHTimeParts();
-
-  const schedule = bossConfig.spawnSchedule.find(
-    (entry) => entry.time === time
+function getSpawnSchedule(time) {
+  return (bossConfig.spawnSchedule || []).find(
+    (entry) => String(entry.time || "") === time
   );
+}
+
+function getWorldIds() {
+  return Object.keys(partyConfig.worlds || {});
+}
+
+async function spawnBossForWorld(client, worldId, tier) {
+  try {
+    await spawnBoss(client, worldId, tier);
+
+    return {
+      ok: true,
+      worldId,
+    };
+  } catch (error) {
+    console.error(`Boss spawn failed for ${worldId}:`, error);
+
+    return {
+      ok: false,
+      worldId,
+      error,
+    };
+  }
+}
+
+async function runBossScheduler(client) {
+  if (!client) return;
+
+  const { date, time } = getPHTimeParts();
+  const schedule = getSpawnSchedule(time);
 
   if (!schedule) return;
 
-  const spawnKey = `${date}-${time}-${schedule.tier}`;
+  const tier = String(schedule.tier || "").toLowerCase();
+
+  if (!tier) {
+    console.warn(`Boss schedule found at ${time}, but tier is missing.`);
+    return;
+  }
+
+  const spawnKey = `${date}-${time}-${tier}`;
 
   if (lastSpawnKey === spawnKey) return;
 
   lastSpawnKey = spawnKey;
 
-  const worldIds = Object.keys(partyConfig.worlds);
+  const worldIds = getWorldIds();
 
-  for (const worldId of worldIds) {
-    await spawnBoss(client, worldId, schedule.tier);
+  if (worldIds.length === 0) {
+    console.warn("Boss scheduler skipped: No worlds configured.");
+    return;
   }
 
+  const results = [];
+
+  for (const worldId of worldIds) {
+    const result = await spawnBossForWorld(client, worldId, tier);
+    results.push(result);
+  }
+
+  const successCount = results.filter((result) => result.ok).length;
+  const failedCount = results.length - successCount;
+
   console.log(
-    `World boss spawned for all worlds at ${time} PHT. Tier: ${schedule.tier}`
+    `World boss scheduler ran at ${time} PHT. Tier: ${tier}. ` +
+      `Success: ${successCount}. Failed: ${failedCount}.`
   );
 }
 
 function startBossScheduler(client) {
-  console.log("Boss scheduler started. Timezone: Asia/Manila");
+  if (schedulerInterval) {
+    console.log("Boss scheduler is already running.");
+    return schedulerInterval;
+  }
 
-  setInterval(async () => {
+  console.log(
+    `Boss scheduler started. Timezone: ${TIMEZONE}. Interval: ${SCHEDULER_INTERVAL_MS}ms`
+  );
+
+  schedulerInterval = setInterval(async () => {
     try {
       await runBossScheduler(client);
     } catch (error) {
       console.error("Boss scheduler error:", error);
     }
-  }, 30 * 1000);
+  }, SCHEDULER_INTERVAL_MS);
+
+  schedulerInterval.unref?.();
+
+  return schedulerInterval;
+}
+
+function stopBossScheduler() {
+  if (!schedulerInterval) {
+    return false;
+  }
+
+  clearInterval(schedulerInterval);
+  schedulerInterval = null;
+
+  console.log("Boss scheduler stopped.");
+
+  return true;
 }
 
 module.exports = {
   startBossScheduler,
+  stopBossScheduler,
+  runBossScheduler,
 };

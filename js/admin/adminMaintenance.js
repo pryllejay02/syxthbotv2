@@ -1,4 +1,6 @@
 const { db } = require("../../firebase/firebase");
+const { calculateTotalStats } = require("../utils/statSystem");
+const balanceConfig = require("../data/balanceConfig");
 
 function getMention(message) {
   return message.mentions.users.first();
@@ -10,14 +12,17 @@ function getStarterWeaponByClass(classId) {
       name: "Wooden Sword",
       emoji: "🗡️",
     },
+
     archer: {
       name: "Wooden Bow",
       emoji: "🏹",
     },
+
     assassin: {
       name: "Training Dagger",
       emoji: "🗡️",
     },
+
     tanker: {
       name: "Wooden Shield",
       emoji: "🛡️",
@@ -25,16 +30,6 @@ function getStarterWeaponByClass(classId) {
   };
 
   return weapons[classId] || weapons.swordsman;
-}
-
-function getDefaultBaseStats(player) {
-  return {
-    attack: Number(player.attack || 10),
-    defense: Number(player.defense || 5),
-    maxHp: Number(player.maxHp || 100),
-    dodge: Number(player.dodge || 0),
-    crit: Number(player.crit || 0),
-  };
 }
 
 function normalizeStarterWeapon(player) {
@@ -46,17 +41,34 @@ function normalizeStarterWeapon(player) {
   if (currentWeapon) {
     return {
       ...currentWeapon,
-      baseItemId: currentWeapon.baseItemId || currentWeapon.id,
+
+      id: currentWeapon.id || `${classId}_starter_weapon`,
+      baseItemId:
+        currentWeapon.baseItemId ||
+        currentWeapon.id ||
+        `${classId}_starter_weapon`,
+
+      name: currentWeapon.name || starterWeapon.name,
+      type: currentWeapon.type || "Weapon",
+
+      quality: currentWeapon.quality || "Starter",
       qualityEmoji:
         currentWeapon.qualityEmoji ||
         (currentWeapon.quality === "Starter" ? "🌱" : ""),
+
+      requiredLevel: Number(currentWeapon.requiredLevel || 1),
+      compatibleClasses: currentWeapon.compatibleClasses || [classId],
+
+      price: Number(currentWeapon.price || 0),
+      description: currentWeapon.description || "Starter weapon.",
       source: currentWeapon.source || "starter",
+
       isStarter:
         currentWeapon.isStarter === true ||
         currentWeapon.quality === "Starter",
-      compatibleClasses:
-        currentWeapon.compatibleClasses || [classId],
+
       quantity: Number(currentWeapon.quantity || 1),
+
       stats: {
         attack: Number(currentWeapon.stats?.attack || 0),
         defense: Number(currentWeapon.stats?.defense || 0),
@@ -64,6 +76,8 @@ function normalizeStarterWeapon(player) {
         dodge: Number(currentWeapon.stats?.dodge || 0),
         crit: Number(currentWeapon.stats?.crit || 0),
       },
+
+      emoji: currentWeapon.emoji || starterWeapon.emoji,
     };
   }
 
@@ -81,6 +95,7 @@ function normalizeStarterWeapon(player) {
     source: "starter",
     isStarter: true,
     quantity: 1,
+
     stats: {
       attack: 0,
       defense: 0,
@@ -88,6 +103,7 @@ function normalizeStarterWeapon(player) {
       dodge: 0,
       crit: 0,
     },
+
     emoji: starterWeapon.emoji,
   };
 }
@@ -112,15 +128,26 @@ function normalizeInventory(inventory = []) {
     .filter(Boolean)
     .map((item) => ({
       ...item,
+
       id: item.id || item.baseItemId || `unknown_${Date.now()}`,
       baseItemId: item.baseItemId || item.id || null,
+
       name: item.name || "Unknown Item",
       type: item.type || "Unknown",
+
       quality: item.quality || "Common",
+      qualityEmoji: item.qualityEmoji || "",
+
       requiredLevel: Number(item.requiredLevel || 1),
       compatibleClasses: item.compatibleClasses || ["all"],
+
       quantity: Math.max(1, Number(item.quantity || 1)),
       price: Number(item.price || 0),
+
+      description: item.description || "",
+      source: item.source || "unknown",
+      emoji: item.emoji || "📦",
+
       stats: {
         attack: Number(item.stats?.attack || 0),
         defense: Number(item.stats?.defense || 0),
@@ -129,6 +156,20 @@ function normalizeInventory(inventory = []) {
         crit: Number(item.stats?.crit || 0),
       },
     }));
+}
+
+function getHpAfterRebalance(player, oldMaxHp, newMaxHp) {
+  const oldHp = Number(player.hp ?? oldMaxHp ?? newMaxHp);
+
+  if (oldHp <= 0) return 0;
+
+  const safeOldMaxHp = Math.max(1, Number(oldMaxHp || newMaxHp || 100));
+  const hpPercent = oldHp / safeOldMaxHp;
+
+  return Math.max(
+    1,
+    Math.min(newMaxHp, Math.floor(Number(newMaxHp || 100) * hpPercent))
+  );
 }
 
 module.exports = async function adminMaintenance(message, args = []) {
@@ -157,34 +198,48 @@ module.exports = async function adminMaintenance(message, args = []) {
 
     const player = playerDoc.data();
 
-    const baseStats = player.baseStats || getDefaultBaseStats(player);
-    const maxHp = Number(player.maxHp || baseStats.maxHp || 100);
-    const hp = Math.max(0, Math.min(Number(player.hp ?? maxHp), maxHp));
+    const classId = player.classId || "swordsman";
+    const level = Math.max(1, Number(player.level || 1));
+
+    const baseStats = balanceConfig.getBaseStatsByClassLevel(
+      classId,
+      level
+    );
+
+    const equipment = normalizeEquipment({
+      ...player,
+      classId,
+    });
+
+    const totalStats = calculateTotalStats(baseStats, equipment);
+
+    const oldMaxHp = Number(player.maxHp || baseStats.maxHp || 100);
+    const hp = getHpAfterRebalance(player, oldMaxHp, totalStats.maxHp);
 
     const repairedData = {
       userId: player.userId || target.id,
       username: player.username || target.username,
 
-      level: Number(player.level || 1),
-      exp: Number(player.exp || 0),
-      gold: Number(player.gold || 0),
+      level,
+      exp: Math.max(0, Number(player.exp || 0)),
+      gold: Math.max(0, Number(player.gold || 0)),
 
       hp,
-      maxHp,
+      maxHp: totalStats.maxHp,
 
-      attack: Number(player.attack || baseStats.attack || 10),
-      defense: Number(player.defense || baseStats.defense || 5),
-      dodge: Number(player.dodge || baseStats.dodge || 0),
-      crit: Number(player.crit || baseStats.crit || 0),
+      attack: totalStats.attack,
+      defense: totalStats.defense,
+      dodge: totalStats.dodge,
+      crit: totalStats.crit,
 
-      class: player.class || "Novice",
-      classId: player.classId || "swordsman",
+      class: player.class || "Swordsman",
+      classId,
       classEmoji: player.classEmoji || "⚔️",
 
-      weapon: player.weapon || getStarterWeaponByClass(player.classId).name,
+      weapon: player.weapon || getStarterWeaponByClass(classId).name,
 
       inventory: normalizeInventory(player.inventory || []),
-      equipment: normalizeEquipment(player),
+      equipment,
 
       baseStats,
 
@@ -233,6 +288,8 @@ module.exports = async function adminMaintenance(message, args = []) {
       `❤️ HP: **${result.repairedData.hp}/${result.repairedData.maxHp}**\n` +
       `⚔️ ATK: **${result.repairedData.attack}**\n` +
       `🛡️ DEF: **${result.repairedData.defense}**\n` +
+      `💨 Dodge: **${result.repairedData.dodge}%**\n` +
+      `💥 Crit: **${result.repairedData.crit}%**\n` +
       `🎒 Inventory: **${result.repairedData.inventory.length} stack(s)**\n` +
       `🏠 Room: ${
         result.repairedData.privateChannelId

@@ -1,3 +1,5 @@
+const balanceConfig = require("../data/balanceConfig");
+
 function getDefaultEquipment() {
   return {
     weapon: null,
@@ -17,7 +19,6 @@ function calculateTotalStats(
   let defense = Number(baseStats.defense || 5);
   let maxHp = Number(baseStats.maxHp || 100);
 
-  // NEW STATS
   let dodge = Number(baseStats.dodge || 0);
   let crit = Number(baseStats.crit || 0);
 
@@ -28,19 +29,20 @@ function calculateTotalStats(
     defense += Number(item.stats.defense || 0);
     maxHp += Number(item.stats.maxHp || 0);
 
-    // NEW
     dodge += Number(item.stats.dodge || 0);
     crit += Number(item.stats.crit || 0);
   });
 
-  // safety limits
-dodge = Number(Math.min(dodge, 80).toFixed(2));
-crit = Number(Math.min(crit, 100).toFixed(2));
+  const dodgeCap = Number(balanceConfig.statCaps?.dodge || 75);
+  const critCap = Number(balanceConfig.statCaps?.crit || 85);
+
+  dodge = Number(Math.min(dodge, dodgeCap).toFixed(2));
+  crit = Number(Math.min(crit, critCap).toFixed(2));
 
   return {
-    attack,
-    defense,
-    maxHp,
+    attack: Math.floor(attack),
+    defense: Math.floor(defense),
+    maxHp: Math.floor(maxHp),
     dodge,
     crit,
   };

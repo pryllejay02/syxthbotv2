@@ -6,12 +6,22 @@ const ACTIVE_PARTY_STATUSES = ["forming", "ready", "raiding"];
 function getWorldPartyConfig(worldId) {
   if (!worldId) return null;
 
-  return partyConfig.worlds[worldId] || null;
+  return partyConfig.worlds?.[worldId] || null;
+}
+
+function getArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function uniqueIds(ids = []) {
+  return [...new Set(ids.filter(Boolean))];
 }
 
 function getMentions(message) {
+  if (!message?.mentions?.users) return [];
+
   return [...message.mentions.users.values()]
-    .filter((user) => !user.bot)
+    .filter((user) => user && !user.bot)
     .filter(
       (user, index, array) =>
         array.findIndex((item) => item.id === user.id) === index
@@ -32,12 +42,11 @@ async function getPlayer(userId) {
 }
 
 async function getPlayers(userIds = []) {
-  const uniqueIds = [...new Set(userIds)].filter(Boolean);
-
+  const uniqueUserIds = uniqueIds(userIds);
   const results = {};
 
   await Promise.all(
-    uniqueIds.map(async (userId) => {
+    uniqueUserIds.map(async (userId) => {
       const player = await getPlayer(userId);
 
       if (player) {
@@ -49,9 +58,15 @@ async function getPlayers(userIds = []) {
   return results;
 }
 
-function isUserInParty(party, userId) {
-  const members = party.members || [];
-  const invited = party.invited || [];
+function isActivePartyStatus(status) {
+  return ACTIVE_PARTY_STATUSES.includes(status || "ready");
+}
+
+function isUserInParty(party = {}, userId) {
+  if (!party || !userId) return false;
+
+  const members = getArray(party.members);
+  const invited = getArray(party.invited);
 
   return (
     party.leaderId === userId ||
@@ -83,12 +98,12 @@ async function findUserActiveParty(userId) {
 }
 
 async function findUsersWithActiveParties(userIds = []) {
-  const uniqueIds = [...new Set(userIds)].filter(Boolean);
+  const uniqueUserIds = uniqueIds(userIds);
 
   const busy = [];
   const free = [];
 
-  for (const userId of uniqueIds) {
+  for (const userId of uniqueUserIds) {
     const activeParty = await findUserActiveParty(userId);
 
     if (activeParty) {
@@ -104,11 +119,21 @@ async function findUsersWithActiveParties(userIds = []) {
   };
 }
 
-async function filterSameWorldInvites(inviteIds, leaderWorldId) {
-  const uniqueInviteIds = [...new Set(inviteIds)].filter(Boolean);
+async function filterSameWorldInvites(inviteIds = [], leaderWorldId) {
+  const uniqueInviteIds = uniqueIds(inviteIds);
 
   const validInvites = [];
   const invalidInvites = [];
+
+  if (!leaderWorldId) {
+    return {
+      validInvites,
+      invalidInvites: uniqueInviteIds.map((userId) => ({
+        userId,
+        reason: "Leader has no selected world",
+      })),
+    };
+  }
 
   const players = await getPlayers(uniqueInviteIds);
 
@@ -159,21 +184,54 @@ function formatInvalidInvites(invalidInvites = []) {
 }
 
 function formatPartyMembers(ids = []) {
-  if (!ids.length) return "None";
+  const uniqueMemberIds = uniqueIds(ids);
 
-  return ids.map((id) => `<@${id}>`).join(", ");
+  if (!uniqueMemberIds.length) return "None";
+
+  return uniqueMemberIds.map((id) => `<@${id}>`).join(", ");
+}
+
+function getPartyMemberCount(party = {}) {
+  return getArray(party.members).length;
+}
+
+function getPartyInviteCount(party = {}) {
+  return getArray(party.invited).length;
+}
+
+function getPartyTotalCount(party = {}) {
+  return getPartyMemberCount(party) + getPartyInviteCount(party);
+}
+
+function getPartyMaxMembers(party = {}) {
+  return Number(party.maxMembers || partyConfig.maxMembers || 5);
+}
+
+function getRemainingPartySlots(party = {}) {
+  const maxMembers = getPartyMaxMembers(party);
+  const currentCount = getPartyTotalCount(party);
+
+  return Math.max(0, maxMembers - currentCount);
 }
 
 module.exports = {
   ACTIVE_PARTY_STATUSES,
   getWorldPartyConfig,
+  getArray,
+  uniqueIds,
   getMentions,
   getPlayer,
   getPlayers,
+  isActivePartyStatus,
   isUserInParty,
   findUserActiveParty,
   findUsersWithActiveParties,
   filterSameWorldInvites,
   formatInvalidInvites,
   formatPartyMembers,
+  getPartyMemberCount,
+  getPartyInviteCount,
+  getPartyTotalCount,
+  getPartyMaxMembers,
+  getRemainingPartySlots,
 };

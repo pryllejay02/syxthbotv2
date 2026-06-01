@@ -1,5 +1,27 @@
+const balanceConfig = require("../data/balanceConfig");
+
+function getMonsterDropText() {
+  const rates = balanceConfig.monsterDrop?.rates || {};
+
+  return (
+    `🟢 Common: **${Number(rates.common || 0)}%**\n` +
+    `🔵 Rare: **${Number(rates.rare || 0)}%**\n` +
+    `❌ No Drop: **${Number(rates.none || 0)}%**`
+  );
+}
+
 module.exports = async function helpCommand(message, prefix) {
   const p = `${prefix} `;
+
+  const maxBuyQuantity = Number(balanceConfig.shop?.maxBuyQuantity || 99);
+  const startingGold = Number(balanceConfig.economy?.startingGold || 500);
+  const restCost = Number(balanceConfig.economy?.restCost || 100);
+  const normalReviveSeconds = Number(balanceConfig.revive?.normalSeconds || 60);
+  const freeReviveHpPercent = Number(
+    balanceConfig.revive?.freeReviveHpPercent || 50
+  );
+  const monsterDropMinLevel = Number(balanceConfig.monsterDrop?.minLevel || 5);
+  const maxLevel = Number(balanceConfig.MAX_LEVEL || balanceConfig.maxLevel || 99);
 
   const page1 =
     `⚔️ **SYXTH MMORPG COMMANDS**\n\n` +
@@ -40,7 +62,7 @@ module.exports = async function helpCommand(message, prefix) {
     `\`${p}shop <level> armor\` - View armor by level\n` +
     `\`${p}shop consumable\` - View consumables\n` +
     `\`${p}buy <item_id> <qty>\` - Buy an item\n` +
-    `📌 Max buy quantity: **99** per command\n\n` +
+    `📌 Max buy quantity: **${maxBuyQuantity}** per command\n\n` +
 
     `🛡️ **Equipment**\n` +
     `\`${p}equip <item_id>\` - Equip an item\n` +
@@ -89,6 +111,19 @@ module.exports = async function helpCommand(message, prefix) {
     `🔵 Rare\n` +
     `🟠 Legendary\n\n` +
 
+    `📦 **Monster Drops**\n` +
+    `Drops start from monster **Lv.${monsterDropMinLevel}+**\n` +
+    `${getMonsterDropText()}\n\n` +
+
+    `📈 **Progression**\n` +
+    `Max Level: **${maxLevel}**\n` +
+    `Monster EXP and Gold scale by monster level.\n` +
+    `Starting Gold: **${startingGold} Gold**\n\n` +
+
+    `❤️ **Rest / Revive**\n` +
+    `Rest or instant revive cost: **${restCost} Gold**\n` +
+    `Free revive timer: **${normalReviveSeconds}s**\n` +
+    `Free revive HP: **${freeReviveHpPercent}%**\n\n` +
 
     `🔥 Explore • Hunt • Raid • Trade • Level Up`;
 

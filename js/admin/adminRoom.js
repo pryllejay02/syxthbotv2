@@ -26,7 +26,9 @@ function getWorldById(worldId) {
 }
 
 async function applyRoomPermissions(message, channel, targetUserId) {
-  if (!channel) return false;
+  if (!message.guild || !channel || !targetUserId) {
+    return false;
+  }
 
   await channel.permissionOverwrites
     .edit(message.guild.id, {
@@ -44,34 +46,44 @@ async function applyRoomPermissions(message, channel, targetUserId) {
     })
     .catch(() => null);
 
-  await channel.permissionOverwrites
-    .edit(message.client.user.id, {
-      ViewChannel: true,
-      SendMessages: true,
-      ReadMessageHistory: true,
-      ManageChannels: true,
-    })
-    .catch(() => null);
+  if (message.client?.user?.id) {
+    await channel.permissionOverwrites
+      .edit(message.client.user.id, {
+        ViewChannel: true,
+        SendMessages: true,
+        ReadMessageHistory: true,
+        ManageChannels: true,
+      })
+      .catch(() => null);
+  }
 
   return true;
 }
 
 async function findExistingRoom(message, roomName, categoryId, userId) {
-  const byName = message.guild.channels.cache.find(
+  if (!message.guild || !categoryId || !userId) {
+    return null;
+  }
+
+  const byExactName = message.guild.channels.cache.find(
     (channel) =>
+      channel.type === ChannelType.GuildText &&
       channel.name === roomName &&
       channel.parentId === categoryId
   );
 
-  if (byName) return byName;
+  if (byExactName) {
+    return byExactName;
+  }
 
-  const channels = message.guild.channels.cache.filter(
+  const byUserPermission = message.guild.channels.cache.filter(
     (channel) =>
+      channel.type === ChannelType.GuildText &&
       channel.parentId === categoryId &&
       channel.permissionOverwrites.cache.has(userId)
   );
 
-  return channels.first() || null;
+  return byUserPermission.first() || null;
 }
 
 async function createPlayerRoom(message, player, targetUser, selectedWorld) {
@@ -141,7 +153,15 @@ module.exports = async function adminRoom(message, args = []) {
   const target = getMention(message);
 
   if (subCommand !== "repairroom") {
-    return message.reply("❌ Unknown room admin command.");
+    return message.reply(
+      "❌ Unknown room admin command.\n\n" +
+        "Available:\n" +
+        "`!s admin repairroom @player`"
+    );
+  }
+
+  if (!message.guild) {
+    return message.reply("❌ This command can only be used inside a server.");
   }
 
   if (!target || target.bot) {
@@ -160,7 +180,7 @@ module.exports = async function adminRoom(message, args = []) {
 
   if (!worldId) {
     return message.reply(
-      `❌ ${target.username} has no selected world in their player data.`
+      `❌ **${player.username || target.username}** has no selected world in their player data.`
     );
   }
 
@@ -168,13 +188,24 @@ module.exports = async function adminRoom(message, args = []) {
 
   if (!selectedWorld) {
     return message.reply(
-      `❌ World config not found for world ID: **${worldId}**`
+      `❌ World config not found for world ID: **${worldId}**.`
     );
   }
 
   if (!selectedWorld.categoryId) {
     return message.reply(
-      `❌ World category ID is missing for **${selectedWorld.name}**.`
+      `❌ World category ID is missing for **${selectedWorld.name || worldId}**.`
+    );
+  }
+
+  const category = await message.guild.channels
+    .fetch(selectedWorld.categoryId)
+    .catch(() => null);
+
+  if (!category) {
+    return message.reply(
+      `❌ Category channel not found for **${selectedWorld.name || worldId}**.\n\n` +
+        `Category ID: \`${selectedWorld.categoryId}\``
     );
   }
 
@@ -194,8 +225,9 @@ module.exports = async function adminRoom(message, args = []) {
       });
 
       return message.reply(
-        `✅ ${target.username} already has a valid private room.\n\n` +
+        `✅ **${player.username || target.username}** already has a valid private room.\n\n` +
           `🏠 Room: <#${currentChannel.id}>\n` +
+          `🌍 World: **${selectedWorld.name || worldId}**\n` +
           `📌 Action: **Permissions repaired**`
       );
     }
@@ -214,9 +246,9 @@ module.exports = async function adminRoom(message, args = []) {
   });
 
   return message.reply(
-    `✅ Private room repaired for **${target.username}**.\n\n` +
+    `✅ Private room repaired for **${player.username || target.username}**.\n\n` +
       `🏠 Room: <#${result.room.id}>\n` +
-      `🌍 World: **${selectedWorld.name}**\n` +
+      `🌍 World: **${selectedWorld.name || worldId}**\n` +
       `📌 Action: **${result.created ? "Created new room" : "Reused existing room"}**`
   );
 };

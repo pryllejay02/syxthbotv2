@@ -22,23 +22,41 @@ const {
 
 const bossConfig = require("../data/bossConfig");
 const partyConfig = require("../data/partyConfig");
+const balanceConfig = require("../data/balanceConfig");
 
 function calculateDamage(playerAttack, bossDefense) {
   const baseDamage = Number(playerAttack || 0) - Number(bossDefense || 0);
-  const randomBonus = Math.floor(Math.random() * 15) + 5;
+
+  const randomBonus = balanceConfig.getCombatRandomBonus(
+    "raidPlayerHitRandomBonus"
+  );
 
   return Math.max(1, baseDamage + randomBonus);
 }
 
 function calculateBossDamage(bossAttack, playerDefense) {
   const baseDamage = Number(bossAttack || 0) - Number(playerDefense || 0);
-  const randomBonus = Math.floor(Math.random() * 20) + 10;
+
+  const randomBonus = balanceConfig.getCombatRandomBonus(
+    "raidBossHitRandomBonus"
+  );
 
   return Math.max(1, baseDamage + randomBonus);
 }
 
+function getRaidReviveHp(maxHp) {
+  const revivePercent = Number(
+    balanceConfig.revive.raidReviveHpPercent || 50
+  );
+
+  return Math.max(
+    1,
+    Math.floor(Number(maxHp || 100) * (revivePercent / 100))
+  );
+}
+
 async function autoReviveRaidPlayer(playerRef, userId, maxHp) {
-  const reviveSeconds = 15;
+  const reviveSeconds = Number(balanceConfig.revive.raidSeconds || 15);
   const reviveAvailableAt = Date.now() + reviveSeconds * 1000;
 
   await playerRef.update({
@@ -59,10 +77,7 @@ async function autoReviveRaidPlayer(playerRef, userId, maxHp) {
         Number(latestPlayer.hp || 0) <= 0 &&
         Number(latestPlayer.raidReviveAvailableAt || 0) === reviveAvailableAt
       ) {
-        const revivedHp = Math.max(
-          1,
-          Math.floor(Number(maxHp || 100) * 0.5)
-        );
+        const revivedHp = getRaidReviveHp(maxHp);
 
         await playerRef.update({
           hp: revivedHp,
@@ -468,7 +483,7 @@ module.exports = async function raidCommand(message, args = []) {
                   `💀 **${
                     targetPlayer.username || target.username
                   }** was defeated!\n` +
-                  `⏳ Auto revive in **${reviveSeconds}s** with 50% HP.`
+                  `⏳ Auto revive in **${reviveSeconds}s** with ${balanceConfig.revive.raidReviveHpPercent}% HP.`
               );
             } else {
               await targetRef.update({
@@ -498,6 +513,7 @@ module.exports = async function raidCommand(message, args = []) {
   const allRanking = await getAllDamageRanking(worldId);
   const rankingText = formatRanking(topRanking);
   const rewardText = await distributeRewards(worldId, bossForHit, allRanking);
+  const rankingDeleteMinutes = Number(bossConfig.rankingDeleteMinutes || 10);
 
   await message.channel.send(
     `👹 **${bossForHit.bossName} HAS BEEN DEFEATED!**\n\n` +
@@ -506,12 +522,12 @@ module.exports = async function raidCommand(message, args = []) {
       `━━━━━━━━━━━━━━━━━━\n` +
       `🎁 **Rewards Distributed**\n\n` +
       `${rewardText || "No valid participants."}\n\n` +
-      `⏳ Boss ranking data will be deleted in **10 minutes**.`
+      `⏳ Boss ranking data will be deleted in **${rankingDeleteMinutes} minutes**.`
   );
 
   setTimeout(async () => {
     await deleteBossData(worldId);
-  }, Number(bossConfig.rankingDeleteMinutes || 10) * 60 * 1000).unref?.();
+  }, rankingDeleteMinutes * 60 * 1000).unref?.();
 
   return null;
 };

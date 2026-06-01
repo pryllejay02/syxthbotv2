@@ -7,6 +7,7 @@ const {
 
 const bossConfig = require("../data/bossConfig");
 const partyConfig = require("../data/partyConfig");
+const balanceConfig = require("../data/balanceConfig");
 
 function getRandomBossByTier(tier) {
   const bosses = bossConfig.bosses[tier] || [];
@@ -319,55 +320,7 @@ async function getAllDamageRanking(worldId) {
 }
 
 function getRewardPenalty(playerLevel, bossLevel) {
-  const levelDifference = Number(playerLevel || 1) - Number(bossLevel || 1);
-
-  if (levelDifference <= 10) {
-    return {
-      goldMultiplier: 1,
-      expMultiplier: 1,
-      dropMultiplier: 1,
-      legendaryAllowed: true,
-      label: "Full Reward",
-    };
-  }
-
-  if (levelDifference <= 20) {
-    return {
-      goldMultiplier: 0.8,
-      expMultiplier: 0.8,
-      dropMultiplier: 0.8,
-      legendaryAllowed: true,
-      label: "Slightly Reduced",
-    };
-  }
-
-  if (levelDifference <= 30) {
-    return {
-      goldMultiplier: 0.5,
-      expMultiplier: 0.5,
-      dropMultiplier: 0.4,
-      legendaryAllowed: true,
-      label: "Reduced",
-    };
-  }
-
-  if (levelDifference <= 50) {
-    return {
-      goldMultiplier: 0.25,
-      expMultiplier: 0,
-      dropMultiplier: 0.15,
-      legendaryAllowed: false,
-      label: "Heavily Reduced",
-    };
-  }
-
-  return {
-    goldMultiplier: 0.1,
-    expMultiplier: 0,
-    dropMultiplier: 0.05,
-    legendaryAllowed: false,
-    label: "Almost No Reward",
-  };
+  return balanceConfig.getBossRewardPenalty(playerLevel, bossLevel);
 }
 
 function rollChance(percent) {

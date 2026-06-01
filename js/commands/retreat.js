@@ -1,8 +1,14 @@
 const { db } = require("../../firebase/firebase");
+const balanceConfig = require("../data/balanceConfig");
 
-const RETREAT_GOLD_PENALTY_PERCENT = 5; // 5% gold loss
-const MIN_RETREAT_PENALTY = 5;
-const MAX_RETREAT_PENALTY = 100;
+const RETREAT_GOLD_PENALTY_PERCENT =
+  balanceConfig.economy.retreat.goldPenaltyPercent;
+
+const MIN_RETREAT_PENALTY =
+  balanceConfig.economy.retreat.minPenalty;
+
+const MAX_RETREAT_PENALTY =
+  balanceConfig.economy.retreat.maxPenalty;
 
 module.exports = async function retreatCommand(message) {
   const userId = message.author.id;
@@ -48,6 +54,7 @@ module.exports = async function retreatCommand(message) {
     transaction.update(playerRef, {
       gold: newGold,
       retreats: Number(player.retreats || 0) + 1,
+      updatedAt: new Date(),
     });
 
     transaction.delete(battleRef);

@@ -1,6 +1,7 @@
 const { AttachmentBuilder } = require("discord.js");
 const { db } = require("../../firebase/firebase");
 const monsters = require("../data/monsters");
+const balanceConfig = require("../data/balanceConfig");
 
 function getRandomMonster(playerLevel) {
   const level = Number(playerLevel || 1);
@@ -8,7 +9,7 @@ function getRandomMonster(playerLevel) {
   // New players should learn safely first.
   if (level <= 3) {
     const levelOneMonsters = monsters.filter(
-      (monster) => Number(monster.level) === 1
+      (monster) => Number(monster.level || 1) === 1
     );
 
     if (levelOneMonsters.length > 0) {
@@ -26,6 +27,7 @@ function getRandomMonster(playerLevel) {
 
   const possibleMonsters = monsters.filter((monster) => {
     const monsterLevel = Number(monster.level || 1);
+
     return monsterLevel >= minLevel && monsterLevel <= maxLevel;
   });
 
@@ -36,6 +38,17 @@ function getRandomMonster(playerLevel) {
   return possibleMonsters[
     Math.floor(Math.random() * possibleMonsters.length)
   ];
+}
+
+function getMonsterReward(monster) {
+  if (typeof balanceConfig.getMonsterReward === "function") {
+    return balanceConfig.getMonsterReward(monster);
+  }
+
+  return {
+    exp: Number(monster.exp || 1),
+    gold: Number(monster.gold || 0),
+  };
 }
 
 module.exports = async function huntCommand(message) {
@@ -78,28 +91,43 @@ module.exports = async function huntCommand(message) {
 
     const monster = getRandomMonster(Number(player.level || 1));
 
+    if (!monster) {
+      return {
+        ok: false,
+        message: "❌ No monsters are available right now.",
+      };
+    }
+
+    const reward = getMonsterReward(monster);
+
     const monsterDodge = Number(monster.dodge || 0);
     const monsterCrit = Number(monster.crit || 0);
+
+    const monsterHp = Number(monster.hp || 1);
+    const monsterAttack = Number(monster.attack || 1);
+    const monsterDefense = Number(monster.defense || 0);
+    const monsterLevel = Number(monster.level || 1);
 
     const battleData = {
       userId,
 
-      monsterName: monster.name,
-      monsterLevel: monster.level,
+      monsterName: monster.name || "Unknown Monster",
+      monsterLevel,
 
-      monsterHp: monster.hp,
-      monsterMaxHp: monster.hp,
+      monsterHp,
+      monsterMaxHp: monsterHp,
 
-      monsterAttack: monster.attack,
-      monsterDefense: monster.defense,
+      monsterAttack,
+      monsterDefense,
 
       monsterCrit,
       monsterDodge,
 
-      monsterExp: monster.exp,
-      monsterGold: monster.gold,
+      monsterExp: Number(reward.exp || 1),
+      monsterGold: Number(reward.gold || 0),
 
       createdAt: new Date(),
+      updatedAt: new Date(),
     };
 
     transaction.set(battleRef, battleData);
@@ -107,8 +135,13 @@ module.exports = async function huntCommand(message) {
     return {
       ok: true,
       monster,
+      monsterLevel,
+      monsterHp,
+      monsterAttack,
+      monsterDefense,
       monsterDodge,
       monsterCrit,
+      reward,
     };
   });
 
@@ -116,16 +149,26 @@ module.exports = async function huntCommand(message) {
     return message.reply(result.message || "❌ Hunt failed.");
   }
 
-  const { monster, monsterDodge, monsterCrit } = result;
+  const {
+    monster,
+    monsterLevel,
+    monsterHp,
+    monsterAttack,
+    monsterDefense,
+    monsterDodge,
+    monsterCrit,
+    reward,
+  } = result;
 
   const content =
-    `🌑 A wild **${monster.name}** appeared!\n\n` +
-    `👹 Monster Lv.${monster.level}\n` +
-    `❤️ HP: ${monster.hp}/${monster.hp}\n` +
-    `⚔️ Attack: ${monster.attack}\n` +
-    `🛡️ Defense: ${monster.defense}\n` +
+    `🌑 A wild **${monster.name || "Unknown Monster"}** appeared!\n\n` +
+    `👹 Monster Lv.${monsterLevel}\n` +
+    `❤️ HP: ${monsterHp}/${monsterHp}\n` +
+    `⚔️ Attack: ${monsterAttack}\n` +
+    `🛡️ Defense: ${monsterDefense}\n` +
     `💨 Dodge: ${monsterDodge}%\n` +
     `💥 Crit: ${monsterCrit}%\n\n` +
+    `🎁 Reward: **${reward.exp} EXP** • **${reward.gold} Gold**\n\n` +
     `Use \`!s hit\` to attack or \`!s retreat\` to escape.`;
 
   if (monster.image) {

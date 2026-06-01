@@ -3,9 +3,19 @@ const { getQualityEmoji } = require("./qualitySystem");
 
 const ACTIVE_TRADE_STATUSES = ["pending", "active", "processing"];
 
+function normalizeId(value) {
+  return String(value || "").toLowerCase().trim();
+}
+
+function getArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
 function getMentionedUser(message) {
+  if (!message?.mentions?.users) return null;
+
   return [...message.mentions.users.values()].find(
-    (user) => !user.bot && user.id !== message.author.id
+    (user) => user && !user.bot && user.id !== message.author.id
   );
 }
 
@@ -22,7 +32,9 @@ async function getPlayer(userId) {
   };
 }
 
-function isUserInTrade(trade, userId) {
+function isUserInTrade(trade = {}, userId) {
+  if (!trade || !userId) return false;
+
   return trade.player1Id === userId || trade.player2Id === userId;
 }
 
@@ -61,13 +73,17 @@ function isStarterItem(item) {
 function findInventoryItem(player, itemId) {
   if (!player || !itemId) return null;
 
-  const inventory = player.inventory || [];
+  const inventory = getArray(player.inventory);
+  const targetId = normalizeId(itemId);
 
-  return inventory.find(
-    (item) =>
-      item.id &&
-      item.id.toLowerCase() === String(itemId).toLowerCase()
-  );
+  return inventory.find((item) => {
+    if (!item) return false;
+
+    const id = normalizeId(item.id);
+    const baseItemId = normalizeId(item.baseItemId);
+
+    return id === targetId || baseItemId === targetId;
+  });
 }
 
 function formatClass(classes = []) {
@@ -94,14 +110,28 @@ function formatItemStats(item = {}) {
   return parts.length ? parts.join(" • ") : "No bonus stats";
 }
 
+function getQualityDisplay(item = {}) {
+  const quality = item.quality || "Common";
+
+  if (quality === "Starter") {
+    return {
+      quality,
+      qualityEmoji: "🌱",
+    };
+  }
+
+  return {
+    quality,
+    qualityEmoji: item.qualityEmoji || getQualityEmoji(quality),
+  };
+}
+
 function formatTradeItem(item) {
   if (!item) return "Unknown item";
 
-  const quality = item.quality || "Common";
-  const qualityEmoji =
-    quality === "Starter" ? "🌱" : getQualityEmoji(quality);
-
+  const { quality, qualityEmoji } = getQualityDisplay(item);
   const quantity = Number(item.quantity || 1);
+  const baseItemId = item.baseItemId || item.id || "no-base-id";
 
   return (
     `${item.emoji || "📦"} **${item.name || "Unknown Item"}** x${quantity}\n` +
@@ -109,14 +139,17 @@ function formatTradeItem(item) {
     `└ 🔓 Lv.${item.requiredLevel || 1}\n` +
     `└ 🎭 ${formatClass(item.compatibleClasses || ["all"])}\n` +
     `└ 📊 ${formatItemStats(item)}\n` +
-    `└ 🏷️ \`${item.id || "no-id"}\``
+    `└ 🏷️ ID: \`${item.id || "no-id"}\`\n` +
+    `└ 🧬 Base ID: \`${baseItemId}\``
   );
 }
 
 function formatTradeItems(items = []) {
-  if (!items.length) return "No items offered.";
+  const safeItems = getArray(items);
 
-  return items
+  if (!safeItems.length) return "No items offered.";
+
+  return safeItems
     .map((item, index) => {
       return `**${index + 1}.** ${formatTradeItem(item)}`;
     })
@@ -127,20 +160,31 @@ function formatConfirmStatus(value) {
   return value ? "✅ Confirmed" : "⏳ Waiting";
 }
 
-function getTradeExpiryText(trade) {
-  if (!trade.expiresAt) return "";
+function getTradeExpiryText(trade = {}) {
+  if (!trade.expiresAt) return "No expiry";
 
   const remainingMs = Number(trade.expiresAt || 0) - Date.now();
   const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
 
   if (remainingSeconds <= 0) return "Expired";
 
-  return `${remainingSeconds}s remaining`;
+  if (remainingSeconds < 60) {
+    return `${remainingSeconds}s remaining`;
+  }
+
+  const minutes = Math.floor(remainingSeconds / 60);
+  const seconds = remainingSeconds % 60;
+
+  if (seconds === 0) {
+    return `${minutes}m remaining`;
+  }
+
+  return `${minutes}m ${seconds}s remaining`;
 }
 
-function formatTradeWindow(trade) {
-  const player1Items = trade.player1Items || [];
-  const player2Items = trade.player2Items || [];
+function formatTradeWindow(trade = {}) {
+  const player1Items = getArray(trade.player1Items);
+  const player2Items = getArray(trade.player2Items);
 
   const player1Gold = Number(trade.player1Gold || 0);
   const player2Gold = Number(trade.player2Gold || 0);
@@ -157,7 +201,7 @@ function formatTradeWindow(trade) {
 
     `━━━━━━━━━━━━━━━━━━\n\n` +
 
-    `👤 **Player 1:** <@${trade.player1Id}>\n` +
+    `👤 **Player 1:** <@${trade.player1Id || "unknown"}>\n` +
     `Confirmation: **${formatConfirmStatus(trade.player1Confirmed)}**\n` +
     `Gold Offer: **${player1Gold} Gold**\n\n` +
     `🎒 **Items Offered:**\n` +
@@ -165,7 +209,7 @@ function formatTradeWindow(trade) {
 
     `━━━━━━━━━━━━━━━━━━\n\n` +
 
-    `👤 **Player 2:** <@${trade.player2Id}>\n` +
+    `👤 **Player 2:** <@${trade.player2Id || "unknown"}>\n` +
     `Confirmation: **${formatConfirmStatus(trade.player2Confirmed)}**\n` +
     `Gold Offer: **${player2Gold} Gold**\n\n` +
     `🎒 **Items Offered:**\n` +
@@ -184,6 +228,8 @@ function formatTradeWindow(trade) {
 
 module.exports = {
   ACTIVE_TRADE_STATUSES,
+  normalizeId,
+  getArray,
   getMentionedUser,
   getPlayer,
   isUserInTrade,

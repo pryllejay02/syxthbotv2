@@ -1,38 +1,20 @@
 const { EmbedBuilder } = require("discord.js");
 const { db } = require("../../firebase/firebase");
+const balanceConfig = require("../data/balanceConfig");
 
 function calculatePower(player) {
-  const attack = Number(player.attack || 0);
-  const defense = Number(player.defense || 0);
-  const maxHp = Number(player.maxHp || 0);
-  const dodge = Number(player.dodge || 0);
-  const crit = Number(player.crit || 0);
-
-  return Math.floor(
-    attack +
-      defense * 1.5 +
-      maxHp * 0.2 +
-      dodge * 10 +
-      crit * 10
-  );
+  return balanceConfig.calculatePower(player);
 }
 
 function calculateOverall(player) {
-  const power = calculatePower(player);
-  const level = Number(player.level || 1);
-  const kills = Number(player.monsterKills || 0);
-
-  return Math.floor(
-    power +
-      level * 100 +
-      kills * 3
-  );
+  return balanceConfig.calculateOverallScore(player);
 }
 
 function getMedal(index) {
   if (index === 0) return "🥇";
   if (index === 1) return "🥈";
   if (index === 2) return "🥉";
+
   return `#${index + 1}`;
 }
 
@@ -96,9 +78,7 @@ module.exports = async function leaderboardCommand(message, args = []) {
     );
   }
 
-  const snapshot = await db
-    .collection("players")
-    .get();
+  const snapshot = await db.collection("players").get();
 
   if (snapshot.empty) {
     return message.reply("❌ No players found.");

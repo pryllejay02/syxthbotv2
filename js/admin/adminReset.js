@@ -5,7 +5,7 @@ function getMention(message) {
 }
 
 async function safeDeleteChannel(guild, channelId) {
-  if (!channelId) return false;
+  if (!guild || !channelId) return false;
 
   const channel = await guild.channels
     .fetch(channelId)
@@ -16,6 +16,12 @@ async function safeDeleteChannel(guild, channelId) {
   await channel.delete().catch(() => null);
 
   return true;
+}
+
+async function commitBatchIfNeeded(batch, count) {
+  if (count > 0) {
+    await batch.commit();
+  }
 }
 
 async function resetTradeForUser(message, userId) {
@@ -34,7 +40,11 @@ async function resetTradeForUser(message, userId) {
 
     const isInTrade =
       trade.player1Id === userId ||
-      trade.player2Id === userId;
+      trade.player2Id === userId ||
+      trade.senderId === userId ||
+      trade.receiverId === userId ||
+      trade.fromUserId === userId ||
+      trade.toUserId === userId;
 
     if (!isInTrade) continue;
 
@@ -51,9 +61,7 @@ async function resetTradeForUser(message, userId) {
     tradeCount++;
   }
 
-  if (tradeCount > 0) {
-    await batch.commit();
-  }
+  await commitBatchIfNeeded(batch, tradeCount);
 
   return {
     tradeCount,
@@ -75,13 +83,18 @@ async function resetPartyForUser(message, userId) {
   for (const doc of snapshot.docs) {
     const party = doc.data();
 
-    const members = party.members || [];
-    const invited = party.invited || [];
+    const members = Array.isArray(party.members) ? party.members : [];
+    const invited = Array.isArray(party.invited) ? party.invited : [];
+    const pendingInvites = Array.isArray(party.pendingInvites)
+      ? party.pendingInvites
+      : [];
 
     const isInParty =
       party.leaderId === userId ||
+      party.hostId === userId ||
       members.includes(userId) ||
-      invited.includes(userId);
+      invited.includes(userId) ||
+      pendingInvites.includes(userId);
 
     if (!isInParty) continue;
 
@@ -94,13 +107,20 @@ async function resetPartyForUser(message, userId) {
       if (deleted) channelCount++;
     }
 
+    if (party.textChannelId) {
+      const deleted = await safeDeleteChannel(
+        message.guild,
+        party.textChannelId
+      );
+
+      if (deleted) channelCount++;
+    }
+
     batch.delete(doc.ref);
     partyCount++;
   }
 
-  if (partyCount > 0) {
-    await batch.commit();
-  }
+  await commitBatchIfNeeded(batch, partyCount);
 
   return {
     partyCount,
@@ -161,7 +181,7 @@ module.exports = async function adminReset(message, args = []) {
     return message.reply(
       `✅ Reset party records for **${target.username}**.\n\n` +
         `👥 Parties Deleted: **${result.partyCount}**\n` +
-        `🔊 Voice Channels Deleted: **${result.channelCount}**`
+        `🧹 Party Channels Deleted: **${result.channelCount}**`
     );
   }
 
@@ -183,7 +203,7 @@ module.exports = async function adminReset(message, args = []) {
         `🤝 Trades Deleted: **${result.tradeResult.tradeCount}**\n` +
         `🧹 Trade Channels Deleted: **${result.tradeResult.channelCount}**\n` +
         `👥 Parties Deleted: **${result.partyResult.partyCount}**\n` +
-        `🔊 Party Voice Channels Deleted: **${result.partyResult.channelCount}**\n` +
+        `🧹 Party Channels Deleted: **${result.partyResult.channelCount}**\n` +
         `⚔️ Battle Deleted: **${
           result.battleResult.battleDeleted ? "Yes" : "No"
         }**`

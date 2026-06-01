@@ -24,6 +24,7 @@ const ITEM_LEVELS = [
 const balanceConfig = {
   maxLevel: MAX_LEVEL,
 
+  // Final player stat caps after base stats + equipment.
   statCaps: {
     dodge: 75,
     crit: 85,
@@ -230,7 +231,19 @@ const balanceConfig = {
   item: {
     levels: ITEM_LEVELS,
 
+    // Used for ATK, DEF, and HP only.
     scalePerTier: 0.85,
+
+    // Used for Dodge and Crit only.
+    // This prevents high-level items from getting extreme % stats.
+    percentScalePerTier: 0.08,
+
+    // Per Common shop item cap before Rare/Legendary roll multipliers.
+    // Example: one Common shop item can only have up to 4 Dodge / 5 Crit.
+    statCaps: {
+      dodge: 4,
+      crit: 5,
+    },
 
     price: {
       weaponBase: 120,
@@ -244,7 +257,7 @@ const balanceConfig = {
     expMultiplier: 1,
     goldMultiplier: 1,
 
-    // Normal monsters now rely on these formulas by default.
+    // Normal monsters rely on these formulas by default.
     // If a monster has rewardOverride: true, then monster.exp / monster.gold will be used.
     expFormula(level) {
       const lv = Number(level || 1);
@@ -466,6 +479,26 @@ function getItemScaleByTierIndex(index) {
   );
 }
 
+function getItemPercentScaleByTierIndex(index) {
+  const safeIndex = Math.max(0, Number(index || 0));
+
+  return Number(
+    (
+      1 +
+      safeIndex * Number(balanceConfig.item.percentScalePerTier || 0.08)
+    ).toFixed(2)
+  );
+}
+
+function capItemPercentStat(statName, value) {
+  const cap = Number(balanceConfig.item?.statCaps?.[statName] || 0);
+  const statValue = Number(value || 0);
+
+  if (!cap) return statValue;
+
+  return Math.min(statValue, cap);
+}
+
 function getShopItemPrice(type, level, tierIndex) {
   const isWeapon = String(type || "").toLowerCase() === "weapon";
   const priceConfig = balanceConfig.item.price;
@@ -611,6 +644,8 @@ module.exports = {
   getLevelStatGain,
   getBaseStatsByClassLevel,
   getItemScaleByTierIndex,
+  getItemPercentScaleByTierIndex,
+  capItemPercentStat,
   getShopItemPrice,
   getNearestItemLevel,
   randomBetween,

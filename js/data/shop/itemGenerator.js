@@ -24,13 +24,68 @@ function makeDescription(stats = {}) {
   return parts.length ? parts.join(", ") : "No bonus stats";
 }
 
-function makeStats(baseStats = {}, scale = 1) {
+// Flat stats scale strongly by tier.
+// Used for ATK, DEF, and HP.
+function getFlatScale(tierIndex) {
+  if (typeof balanceConfig.getItemScaleByTierIndex === "function") {
+    return balanceConfig.getItemScaleByTierIndex(tierIndex);
+  }
+
+  return Number(
+    (
+      1 +
+      Number(tierIndex || 0) *
+        Number(balanceConfig.item?.scalePerTier || 0.85)
+    ).toFixed(2)
+  );
+}
+
+// Percentage stats scale slowly by tier.
+// Used for Dodge and Crit only.
+function getPercentScale(tierIndex) {
+  return Number(
+    (
+      1 +
+      Number(tierIndex || 0) *
+        Number(balanceConfig.item?.percentScalePerTier || 0.08)
+    ).toFixed(2)
+  );
+}
+
+// Per-item cap for Common shop item Dodge/Crit.
+// This prevents shop items from creating extreme dodge/crit values.
+function capPercentStat(statName, value) {
+  const cap = Number(balanceConfig.item?.statCaps?.[statName] || 0);
+
+  if (!cap) return value;
+
+  return Math.min(value, cap);
+}
+
+function makeStats(baseStats = {}, tierIndex = 0) {
+  const flatScale = getFlatScale(tierIndex);
+  const percentScale = getPercentScale(tierIndex);
+
+  const attack = Math.floor(Number(baseStats.attack || 0) * flatScale);
+  const defense = Math.floor(Number(baseStats.defense || 0) * flatScale);
+  const maxHp = Math.floor(Number(baseStats.maxHp || 0) * flatScale);
+
+  const dodge = capPercentStat(
+    "dodge",
+    Number((Number(baseStats.dodge || 0) * percentScale).toFixed(1))
+  );
+
+  const crit = capPercentStat(
+    "crit",
+    Number((Number(baseStats.crit || 0) * percentScale).toFixed(1))
+  );
+
   return {
-    attack: Math.floor(Number(baseStats.attack || 0) * scale),
-    defense: Math.floor(Number(baseStats.defense || 0) * scale),
-    maxHp: Math.floor(Number(baseStats.maxHp || 0) * scale),
-    dodge: Number((Number(baseStats.dodge || 0) * scale).toFixed(1)),
-    crit: Number((Number(baseStats.crit || 0) * scale).toFixed(1)),
+    attack,
+    defense,
+    maxHp,
+    dodge,
+    crit,
   };
 }
 
@@ -48,16 +103,30 @@ function buildShopItem({
 }) {
   return {
     id,
+    baseItemId: id,
+
     name,
     type,
+
     quality,
     qualityEmoji: getQualityEmoji(quality),
-    requiredLevel,
-    compatibleClasses,
-    price,
-    description,
-    stats,
-    emoji,
+
+    requiredLevel: Number(requiredLevel || 1),
+    compatibleClasses: compatibleClasses || ["all"],
+
+    price: Number(price || 0),
+    description: description || "No bonus stats",
+
+    stats: stats || {
+      attack: 0,
+      defense: 0,
+      maxHp: 0,
+      dodge: 0,
+      crit: 0,
+    },
+
+    emoji: emoji || "📦",
+    source: "shop",
   };
 }
 
@@ -69,10 +138,9 @@ function generateClassItems(config = {}) {
   }
 
   tiers.forEach(([level, tier], index) => {
-    const scale = balanceConfig.getItemScaleByTierIndex(index);
     const tierName = toTitle(tier);
 
-    const weaponStats = makeStats(config.weapon.stats || {}, scale);
+    const weaponStats = makeStats(config.weapon.stats || {}, index);
 
     items.push(
       buildShopItem({
@@ -90,7 +158,7 @@ function generateClassItems(config = {}) {
     );
 
     config.gears.forEach((gear) => {
-      const gearStats = makeStats(gear.stats || {}, scale);
+      const gearStats = makeStats(gear.stats || {}, index);
 
       items.push(
         buildShopItem({

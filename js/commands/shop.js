@@ -342,22 +342,22 @@ module.exports = async function shopCommand(message, args = []) {
   const hiddenCount = Math.max(0, filteredItems.length - displayedItems.length);
 
   const itemsText = displayedItems
-    .map((item) => {
-      const icon = item.emoji || "📦";
-      const qualityEmoji = item.qualityEmoji || getQualityEmoji(item.quality || "Common");
+  .map((item) => {
+    const icon = item.emoji || "📦";
+    const qualityEmoji =
+      item.qualityEmoji || getQualityEmoji(item.quality || "Common");
 
-      return (
-        `${icon} **${item.name || "Unknown Item"}**\n` +
-        `🏷️ ID: \`${item.id || "no-id"}\`\n` +
-        `🧬 Base ID: \`${item.baseItemId || item.id || "no-base-id"}\`\n` +
-        `${qualityEmoji} ${item.quality || "Common"} • ${item.type || "Unknown"}\n` +
-        `🔓 Required: Lv.${item.requiredLevel || 1}\n` +
-        `🎭 Class: \`${formatClass(item.compatibleClasses || ["all"])}\`\n` +
-        `📊 ${formatStats(item.stats || {})}\n` +
-        `💰 ${item.price || 0} Gold`
-      );
-    })
-    .join("\n\n");
+    return (
+      `${icon} **${item.name || "Unknown Item"}**\n` +
+      `🏷️ ID: \`${item.id || "no-id"}\`\n` +
+      `${qualityEmoji} ${item.quality || "Common"} • ${item.type || "Unknown"}\n` +
+      `🔓 Required: Lv.${item.requiredLevel || 1}\n` +
+      `🎭 Class: \`${formatClass(item.compatibleClasses || ["all"])}\`\n` +
+      `📊 ${formatStats(item.stats || {})}\n` +
+      `💰 ${item.price || 0} Gold`
+    );
+  })
+  .join("\n\n");
 
   const hiddenText =
     hiddenCount > 0

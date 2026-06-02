@@ -613,8 +613,7 @@ function showEquipment(item, emptyText) {
     `└ 🔓 Lv.${item.requiredLevel || 1}\n` +
     `└ 🎭 ${formatClass(item.compatibleClasses || ["all"])}\n` +
     `└ 📊 ${formatStats(item.stats || {})}\n` +
-    `└ 🏷️ ID: \`${item.id || "no-id"}\`\n` +
-    `└ 🧬 Base ID: \`${item.baseItemId || item.id || "no-base-id"}\``
+    `└ 🏷️ ID: \`${item.id || "no-id"}\``
   );
 }
 

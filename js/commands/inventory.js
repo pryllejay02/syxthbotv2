@@ -581,7 +581,6 @@ module.exports = async function inventoryCommand(message, args = []) {
               const emoji = getItemEmoji(item);
               const { quality, qualityEmoji } = getQualityDisplay(item);
               const quantity = Number(item.quantity || 1);
-              const baseItemId = item.baseItemId || item.id || "no-base-id";
 
               return (
                 `${emoji} **${item.name || "Unknown Item"}** x${quantity}\n` +
@@ -590,8 +589,7 @@ module.exports = async function inventoryCommand(message, args = []) {
                 `└ 🎭 ${formatClass(item.compatibleClasses || ["all"])}\n` +
                 `└ 📊 ${formatStats(item.stats || {})}\n` +
                 `└ 💰 Price: ${item.price || 0} Gold\n` +
-                `└ 🏷️ ID: \`${item.id || "no-id"}\`\n` +
-                `└ 🧬 Base ID: \`${baseItemId}\``
+                `└ 🏷️ ID: \`${item.id || "no-id"}\``
               );
             })
             .join("\n\n");

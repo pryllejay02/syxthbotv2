@@ -376,9 +376,9 @@ function getLeaderboardConfig(type) {
   const configs = {
     overall: {
       title: "🏆 SYXTH OVERALL LEADERBOARD",
-      description: "Top adventurers based on level, power, and monster kills.",
+      description: "Top adventurers based on overall progress.",
       getScore: calculateOverall,
-      scoreLabel: "Score",
+      scoreLabel: "Overall",
     },
 
     power: {
@@ -411,6 +411,73 @@ function getLeaderboardConfig(type) {
   };
 
   return configs[normalized] || configs.overall;
+}
+
+function formatWorld(player = {}) {
+  return `🌍 World: **${player.world?.name || "Unknown"}**`;
+}
+
+function formatLeaderboardDetails(player = {}, type = "overall") {
+  const normalized = String(type || "overall").toLowerCase();
+
+  if (normalized === "overall") {
+    return (
+      `🏅 Overall: **${player.leaderboardScore}**\n` +
+      `⭐ Level: **${player.level || 1}**\n` +
+      `⚔️ Power: **${player.power}**\n` +
+      `👹 Kills: **${player.monsterKills || 0}**\n` +
+      formatWorld(player)
+    );
+  }
+
+  if (normalized === "power") {
+    return (
+      `⚔️ Power: **${player.leaderboardScore}**\n` +
+      `🗡️ ATK: **${player.attack}**\n` +
+      `🛡️ DEF: **${player.defense}**\n` +
+      `❤️ HP: **${player.hp}/${player.maxHp}**\n` +
+      `💨 Dodge: **${Number(player.dodge || 0).toFixed(1)}%**\n` +
+      `💥 Crit: **${Number(player.crit || 0).toFixed(1)}%**\n` +
+      formatWorld(player)
+    );
+  }
+
+  if (normalized === "level") {
+    return (
+      `⭐ Level: **${player.leaderboardScore}**\n` +
+      formatWorld(player)
+    );
+  }
+
+  if (normalized === "kills") {
+    return (
+      `👹 Kills: **${player.leaderboardScore}**\n` +
+      formatWorld(player)
+    );
+  }
+
+  if (normalized === "gold") {
+    return (
+      `🪙 Gold: **${player.leaderboardScore}**\n` +
+      formatWorld(player)
+    );
+  }
+
+  return (
+    `🏅 ${player.leaderboardScore}\n` +
+    formatWorld(player)
+  );
+}
+
+function getOtherRankingsText() {
+  return (
+    "Other rankings:\n" +
+    "`!s leaderboard overall`\n" +
+    "`!s leaderboard power`\n" +
+    "`!s leaderboard level`\n" +
+    "`!s leaderboard kills`\n" +
+    "`!s leaderboard gold`"
+  );
 }
 
 module.exports = async function leaderboardCommand(message, args = []) {
@@ -451,7 +518,6 @@ module.exports = async function leaderboardCommand(message, args = []) {
     .map((player) => ({
       ...player,
       power: calculatePower(player),
-      overallScore: calculateOverall(player),
       leaderboardScore: config.getScore(player),
     }))
     .sort((a, b) => b.leaderboardScore - a.leaderboardScore)
@@ -467,16 +533,7 @@ module.exports = async function leaderboardCommand(message, args = []) {
 
       return (
         `${medal} **${player.username}**\n` +
-        `🏅 ${config.scoreLabel}: **${player.leaderboardScore}**\n` +
-        `⭐ Level: **${player.level || 1}**\n` +
-        `⚔️ Power: **${player.power}**\n` +
-        `❤️ HP: **${player.hp}/${player.maxHp}**\n` +
-        `🛡️ DEF: **${player.defense}**\n` +
-        `💨 Dodge: **${Number(player.dodge || 0).toFixed(1)}%**\n` +
-        `💥 Crit: **${Number(player.crit || 0).toFixed(1)}%**\n` +
-        `👹 Kills: **${player.monsterKills || 0}**\n` +
-        `🪙 Gold: **${player.gold || 0}**\n` +
-        `🌍 World: **${player.world?.name || "Unknown"}**`
+        formatLeaderboardDetails(player, type)
       );
     })
     .join("\n\n");
@@ -488,12 +545,7 @@ module.exports = async function leaderboardCommand(message, args = []) {
       `${config.description}\n\n` +
         leaderboardText +
         `\n\n━━━━━━━━━━━━━━━━━━\n` +
-        `Other rankings:\n` +
-        "`!s leaderboard overall`\n" +
-        "`!s leaderboard power`\n" +
-        "`!s leaderboard level`\n" +
-        "`!s leaderboard kills`\n" +
-        "`!s leaderboard gold`"
+        getOtherRankingsText()
     )
     .setFooter({
       text: "Syxth MMORPG Rankings",

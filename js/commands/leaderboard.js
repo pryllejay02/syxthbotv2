@@ -496,7 +496,7 @@ module.exports = async function leaderboardCommand(message, args = []) {
         "`!s leaderboard gold`"
     )
     .setFooter({
-      text: "Syxth MMORPG Rankings • Rebalanced Stats",
+      text: "Syxth MMORPG Rankings",
     });
 
   return message.reply({

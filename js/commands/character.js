@@ -366,7 +366,10 @@ function rebalanceItemStats(item = {}) {
       compatibleClasses:
         sourceItem.compatibleClasses || item.compatibleClasses || ["all"],
 
-      price: Math.max(0, Math.floor(Number(sourceItem.price || item.price || 0))),
+      price: Math.max(
+        0,
+        Math.floor(Number(sourceItem.price || item.price || 0))
+      ),
 
       description:
         sourceItem.description || item.description || "Consumable item.",
@@ -559,14 +562,6 @@ function calculatePower(player) {
   );
 }
 
-function calculateOverallScore(player) {
-  if (typeof balanceConfig.calculateOverallScore === "function") {
-    return balanceConfig.calculateOverallScore(player);
-  }
-
-  return calculatePower(player) + Number(player.monsterKills || 0) * 3;
-}
-
 function countEquippedItems(equipment = {}) {
   return Object.values(equipment).filter(Boolean).length;
 }
@@ -724,7 +719,6 @@ module.exports = async function characterCommand(message) {
 
   const equipment = rebalancedPlayer.equipment || getDefaultEquipment();
   const power = calculatePower(rebalancedPlayer);
-  const overallScore = calculateOverallScore(rebalancedPlayer);
   const equippedCount = countEquippedItems(equipment);
 
   const status = hp <= 0 ? "Defeated 💀" : "Alive 🟢";
@@ -756,7 +750,6 @@ module.exports = async function characterCommand(message) {
         `⭐ Level: **${level}**\n` +
         `📊 Status: **${status}**\n` +
         `⚡ Power: **${power}**\n` +
-        `🏆 Overall Score: **${overallScore}**\n` +
         `🪙 Gold: **${gold}**\n` +
         `🎒 Equipped: **${equippedCount}/6**\n` +
         `✨ Revive: **${reviveText}**\n\n` +
@@ -783,7 +776,7 @@ module.exports = async function characterCommand(message) {
       })
     )
     .setFooter({
-      text: "Syxth MMORPG Character Equipment • Rebalanced Stats",
+      text: "Syxth MMORPG Character Equipment",
     });
 
   return message.reply({

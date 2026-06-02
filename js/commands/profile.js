@@ -26,7 +26,11 @@ const EQUIPMENT_SLOTS = [
 function createBar(current, max, size = 10) {
   if (max <= 0) return "░".repeat(size);
 
-  const safeCurrent = Math.max(0, Math.min(Number(current || 0), Number(max || 0)));
+  const safeCurrent = Math.max(
+    0,
+    Math.min(Number(current || 0), Number(max || 0))
+  );
+
   const percentage = safeCurrent / max;
   const filled = Math.round(size * percentage);
   const empty = size - filled;
@@ -380,7 +384,10 @@ function rebalanceItemStats(item = {}) {
       compatibleClasses:
         sourceItem.compatibleClasses || item.compatibleClasses || ["all"],
 
-      price: Math.max(0, Math.floor(Number(sourceItem.price || item.price || 0))),
+      price: Math.max(
+        0,
+        Math.floor(Number(sourceItem.price || item.price || 0))
+      ),
 
       description:
         sourceItem.description || item.description || "Consumable item.",
@@ -572,14 +579,6 @@ function calculatePower(player) {
   );
 }
 
-function calculateOverallScore(player) {
-  if (typeof balanceConfig.calculateOverallScore === "function") {
-    return balanceConfig.calculateOverallScore(player);
-  }
-
-  return calculatePower(player) + Number(player.monsterKills || 0) * 3;
-}
-
 function countEquippedItems(equipment = {}) {
   return Object.values(equipment).filter(Boolean).length;
 }
@@ -726,7 +725,6 @@ module.exports = async function profileCommand(message) {
   const rank = getPlayerRank(level);
   const status = hp <= 0 ? "Defeated 💀" : "Alive 🟢";
   const power = calculatePower(rebalancedPlayer);
-  const overallScore = calculateOverallScore(rebalancedPlayer);
 
   const equipment = rebalancedPlayer.equipment || {};
   const equippedCount = countEquippedItems(equipment);
@@ -779,8 +777,7 @@ module.exports = async function profileCommand(message) {
         `**Level:** ${level}/${MAX_LEVEL}\n` +
         `**Rank:** ${rank}\n` +
         `**Status:** ${status}\n` +
-        `**Power:** ${power}\n` +
-        `**Overall Score:** ${overallScore}\n\n` +
+        `**Power:** ${power}\n\n` +
         `❤️ **HP**\n` +
         `\`${hpBar}\` **${hp}/${maxHp}**\n\n` +
         `⭐ **EXP**\n` +
@@ -823,7 +820,7 @@ module.exports = async function profileCommand(message) {
       })
     )
     .setFooter({
-      text: "Syxth MMORPG Profile • Rebalanced Stats",
+      text: "Syxth MMORPG Profile",
     });
 
   return message.reply({

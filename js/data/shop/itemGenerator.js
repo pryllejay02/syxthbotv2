@@ -5,6 +5,50 @@ const SHOP_QUALITY = "Common";
 
 const tiers = balanceConfig.item?.levels || balanceConfig.ITEM_LEVELS || [];
 
+/**
+ * Final class item balance.
+ *
+ * This balances gear without needing to edit every generated item one by one.
+ *
+ * Swordsman  = balanced bruiser, slightly better all-around gear.
+ * Archer     = strong attack, controlled dodge/crit.
+ * Assassin   = highest burst identity, but reduced free dodge/crit from items.
+ * Tanker     = still tanky, but HP/DEF gear scaling is reduced to avoid being unkillable.
+ */
+const DEFAULT_CLASS_ITEM_BALANCE = {
+  swordsman: {
+    attack: 1.08,
+    defense: 1.08,
+    maxHp: 1.05,
+    dodge: 0.95,
+    crit: 1.0,
+  },
+
+  archer: {
+    attack: 1.05,
+    defense: 0.95,
+    maxHp: 0.95,
+    dodge: 0.8,
+    crit: 0.9,
+  },
+
+  assassin: {
+    attack: 1.03,
+    defense: 0.85,
+    maxHp: 0.8,
+    dodge: 0.7,
+    crit: 0.82,
+  },
+
+  tanker: {
+    attack: 0.85,
+    defense: 0.78,
+    maxHp: 0.75,
+    dodge: 0.75,
+    crit: 0.75,
+  },
+};
+
 function toTitle(text) {
   return String(text || "")
     .split("_")
@@ -24,6 +68,29 @@ function makeDescription(stats = {}) {
   return parts.length ? parts.join(", ") : "No bonus stats";
 }
 
+function getClassItemBalance(classId = "swordsman", customBalance = null) {
+  const normalizedClassId = String(classId || "swordsman").toLowerCase();
+
+  return (
+    customBalance ||
+    balanceConfig.classItemBalance?.[normalizedClassId] ||
+    DEFAULT_CLASS_ITEM_BALANCE[normalizedClassId] ||
+    DEFAULT_CLASS_ITEM_BALANCE.swordsman
+  );
+}
+
+function applyClassItemBalance(baseStats = {}, classId = "swordsman", customBalance = null) {
+  const balance = getClassItemBalance(classId, customBalance);
+
+  return {
+    attack: Number(baseStats.attack || 0) * Number(balance.attack || 1),
+    defense: Number(baseStats.defense || 0) * Number(balance.defense || 1),
+    maxHp: Number(baseStats.maxHp || 0) * Number(balance.maxHp || 1),
+    dodge: Number(baseStats.dodge || 0) * Number(balance.dodge || 1),
+    crit: Number(baseStats.crit || 0) * Number(balance.crit || 1),
+  };
+}
+
 // Flat stats scale by tier.
 // Used for ATK, DEF, and HP only.
 function getFlatScale(tierIndex) {
@@ -35,7 +102,7 @@ function getFlatScale(tierIndex) {
     (
       1 +
       Number(tierIndex || 0) *
-        Number(balanceConfig.item?.scalePerTier || 0.45)
+        Number(balanceConfig.item?.scalePerTier || 0.38)
     ).toFixed(2)
   );
 }
@@ -51,7 +118,7 @@ function getPercentScale(tierIndex) {
     (
       1 +
       Number(tierIndex || 0) *
-        Number(balanceConfig.item?.percentScalePerTier || 0.04)
+        Number(balanceConfig.item?.percentScalePerTier || 0.03)
     ).toFixed(2)
   );
 }
@@ -76,30 +143,44 @@ function capPercentStat(statName, value) {
   return Math.min(statValue, cap);
 }
 
-function makeStats(baseStats = {}, tierIndex = 0) {
+function makeStats(baseStats = {}, tierIndex = 0, classId = "swordsman", customBalance = null) {
+  const balancedBaseStats = applyClassItemBalance(
+    baseStats,
+    classId,
+    customBalance
+  );
+
   const flatScale = getFlatScale(tierIndex);
   const percentScale = getPercentScale(tierIndex);
 
-  const attack = Math.floor(Number(baseStats.attack || 0) * flatScale);
-  const defense = Math.floor(Number(baseStats.defense || 0) * flatScale);
-  const maxHp = Math.floor(Number(baseStats.maxHp || 0) * flatScale);
+  const attack = Math.floor(
+    Number(balancedBaseStats.attack || 0) * flatScale
+  );
+
+  const defense = Math.floor(
+    Number(balancedBaseStats.defense || 0) * flatScale
+  );
+
+  const maxHp = Math.floor(
+    Number(balancedBaseStats.maxHp || 0) * flatScale
+  );
 
   const dodge = capPercentStat(
     "dodge",
-    Number((Number(baseStats.dodge || 0) * percentScale).toFixed(1))
+    Number((Number(balancedBaseStats.dodge || 0) * percentScale).toFixed(1))
   );
 
   const crit = capPercentStat(
     "crit",
-    Number((Number(baseStats.crit || 0) * percentScale).toFixed(1))
+    Number((Number(balancedBaseStats.crit || 0) * percentScale).toFixed(1))
   );
 
   return {
-    attack,
-    defense,
-    maxHp,
-    dodge,
-    crit,
+    attack: Math.max(0, attack),
+    defense: Math.max(0, defense),
+    maxHp: Math.max(0, maxHp),
+    dodge: Math.max(0, dodge),
+    crit: Math.max(0, crit),
   };
 }
 
@@ -122,6 +203,21 @@ function getShopItemPrice(type, level, tierIndex) {
   );
 }
 
+function normalizeType(type = "Unknown") {
+  const normalizedType = String(type || "Unknown").toLowerCase();
+
+  const typeMap = {
+    weapon: "Weapon",
+    helmet: "Helmet",
+    armor: "Armor",
+    gloves: "Gloves",
+    pants: "Pants",
+    boots: "Boots",
+  };
+
+  return typeMap[normalizedType] || type;
+}
+
 function buildShopItem({
   id,
   name,
@@ -134,20 +230,22 @@ function buildShopItem({
   stats,
   emoji,
 }) {
+  const normalizedQuality = quality || SHOP_QUALITY;
+
   return {
     id,
     baseItemId: id,
 
     name,
-    type,
+    type: normalizeType(type),
 
-    quality,
-    qualityEmoji: getQualityEmoji(quality),
+    quality: normalizedQuality,
+    qualityEmoji: getQualityEmoji(normalizedQuality),
 
     requiredLevel: Number(requiredLevel || 1),
     compatibleClasses: compatibleClasses || ["all"],
 
-    price: Number(price || 0),
+    price: Math.max(0, Math.floor(Number(price || 0))),
     description: description || "No bonus stats",
 
     stats: stats || {
@@ -158,6 +256,7 @@ function buildShopItem({
       crit: 0,
     },
 
+    quantity: 1,
     emoji: emoji || "📦",
     source: "shop",
   };
@@ -170,19 +269,27 @@ function generateClassItems(config = {}) {
     return items;
   }
 
+  const classId = String(config.classId || "swordsman").toLowerCase();
+  const customBalance = config.itemBalance || null;
+
   tiers.forEach(([level, tier], index) => {
     const tierName = toTitle(tier);
 
-    const weaponStats = makeStats(config.weapon.stats || {}, index);
+    const weaponStats = makeStats(
+      config.weapon.stats || {},
+      index,
+      classId,
+      customBalance
+    );
 
     items.push(
       buildShopItem({
-        id: `${config.classId}_${tier}_weapon`,
+        id: `${classId}_${tier}_weapon`,
         name: `${SHOP_QUALITY} ${tierName} ${config.weapon.name}`,
         type: "Weapon",
         quality: SHOP_QUALITY,
         requiredLevel: level,
-        compatibleClasses: [config.classId],
+        compatibleClasses: [classId],
         price: getShopItemPrice("Weapon", level, index),
         description: makeDescription(weaponStats),
         stats: weaponStats,
@@ -191,16 +298,21 @@ function generateClassItems(config = {}) {
     );
 
     config.gears.forEach((gear) => {
-      const gearStats = makeStats(gear.stats || {}, index);
+      const gearStats = makeStats(
+        gear.stats || {},
+        index,
+        classId,
+        customBalance
+      );
 
       items.push(
         buildShopItem({
-          id: `${config.classId}_${tier}_${gear.slot}`,
+          id: `${classId}_${tier}_${gear.slot}`,
           name: `${SHOP_QUALITY} ${tierName} ${gear.name}`,
           type: gear.type,
           quality: SHOP_QUALITY,
           requiredLevel: level,
-          compatibleClasses: [config.classId],
+          compatibleClasses: [classId],
           price: getShopItemPrice(gear.type, level, index),
           description: makeDescription(gearStats),
           stats: gearStats,

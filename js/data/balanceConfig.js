@@ -25,8 +25,8 @@ const balanceConfig = {
   maxLevel: MAX_LEVEL,
 
   statCaps: {
-    dodge: 60,
-    crit: 75,
+    dodge: 50,
+    crit: 65,
   },
 
   economy: {
@@ -96,10 +96,10 @@ const balanceConfig = {
 
   powerFormula: {
     attack: 1,
-    defense: 1.4,
-    maxHp: 0.18,
-    dodge: 6,
-    crit: 6,
+    defense: 1.35,
+    maxHp: 0.16,
+    dodge: 4.5,
+    crit: 4.5,
     level: 100,
     kills: 3,
   },
@@ -114,73 +114,73 @@ const balanceConfig = {
     statRolls: {
       Common: {
         min: 1.0,
-        max: 1.05,
+        max: 1.04,
       },
 
       Rare: {
-        min: 1.15,
-        max: 1.3,
+        min: 1.12,
+        max: 1.24,
       },
 
       Legendary: {
-        min: 1.45,
-        max: 1.75,
+        min: 1.35,
+        max: 1.6,
       },
     },
 
     statCaps: {
       Common: {
-        dodge: 2.5,
-        crit: 3.5,
+        dodge: 2,
+        crit: 3,
       },
 
       Rare: {
-        dodge: 4,
-        crit: 5.5,
+        dodge: 3.5,
+        crit: 4.5,
       },
 
       Legendary: {
-        dodge: 7,
-        crit: 10,
+        dodge: 5.5,
+        crit: 7,
       },
     },
 
     priceMultiplier: {
       Common: 1,
-      Rare: 1.6,
-      Legendary: 4,
+      Rare: 1.7,
+      Legendary: 3.8,
     },
   },
 
   classBaseStats: {
     swordsman: {
-      maxHp: 120,
-      attack: 14,
-      defense: 8,
-      dodge: 3,
-      crit: 5,
+      maxHp: 130,
+      attack: 15,
+      defense: 9,
+      dodge: 4,
+      crit: 6,
     },
 
     archer: {
       maxHp: 95,
       attack: 18,
       defense: 5,
-      dodge: 7,
-      crit: 9,
+      dodge: 6,
+      crit: 8,
     },
 
     assassin: {
       maxHp: 85,
       attack: 20,
       defense: 4,
-      dodge: 10,
-      crit: 12,
+      dodge: 8,
+      crit: 10,
     },
 
     tanker: {
-      maxHp: 170,
+      maxHp: 155,
       attack: 10,
-      defense: 15,
+      defense: 14,
       dodge: 2,
       crit: 3,
     },
@@ -188,34 +188,34 @@ const balanceConfig = {
 
   classGrowth: {
     swordsman: {
-      maxHp: 12,
-      attack: 2.6,
-      defense: 1.8,
-      dodge: 0.03,
-      crit: 0.04,
+      maxHp: 13,
+      attack: 2.8,
+      defense: 1.9,
+      dodge: 0.035,
+      crit: 0.045,
     },
 
     archer: {
-      maxHp: 9,
-      attack: 3.1,
+      maxHp: 10,
+      attack: 3.0,
       defense: 1.1,
-      dodge: 0.06,
-      crit: 0.08,
+      dodge: 0.045,
+      crit: 0.065,
     },
 
     assassin: {
       maxHp: 8,
-      attack: 3.3,
-      defense: 0.9,
-      dodge: 0.08,
-      crit: 0.1,
+      attack: 3.2,
+      defense: 0.85,
+      dodge: 0.055,
+      crit: 0.08,
     },
 
     tanker: {
-      maxHp: 16,
-      attack: 2.0,
-      defense: 2.8,
-      dodge: 0.02,
+      maxHp: 14,
+      attack: 2.1,
+      defense: 2.5,
+      dodge: 0.015,
       crit: 0.02,
     },
   },
@@ -238,27 +238,33 @@ const balanceConfig = {
     Rare: {
       emoji: "🔵",
       color: "#3B82F6",
-      statMultiplier: 1.25,
-      priceMultiplier: 1.8,
+      statMultiplier: 1.2,
+      priceMultiplier: 1.7,
     },
 
     Legendary: {
       emoji: "🟠",
       color: "#F59E0B",
-      statMultiplier: 1.75,
-      priceMultiplier: 4,
+      statMultiplier: 1.55,
+      priceMultiplier: 3.8,
     },
   },
 
   item: {
     levels: ITEM_LEVELS,
 
-    scalePerTier: 0.45,
-    percentScalePerTier: 0.04,
+    // Used for ATK, DEF, and HP only.
+    // Lowered to stop late-game gear from overpowering base stats.
+    scalePerTier: 0.38,
 
+    // Used for Dodge and Crit only.
+    // Lowered to control evasion/critical stacking.
+    percentScalePerTier: 0.03,
+
+    // Per Common shop item cap before Rare/Legendary roll multipliers.
     statCaps: {
-      dodge: 2.5,
-      crit: 3.5,
+      dodge: 2,
+      crit: 3,
     },
 
     price: {
@@ -287,8 +293,8 @@ const balanceConfig = {
   },
 
   monsterStats: {
-    dodgeCap: 25,
-    critCap: 30,
+    dodgeCap: 22,
+    critCap: 27,
 
     hpFormula(level) {
       const lv = Number(level || 1);
@@ -311,19 +317,19 @@ const balanceConfig = {
     dodgeFormula(level) {
       const lv = Number(level || 1);
 
-      return Math.min(25, Number((1 + lv * 0.18).toFixed(1)));
+      return Math.min(22, Number((1 + lv * 0.15).toFixed(1)));
     },
 
     critFormula(level) {
       const lv = Number(level || 1);
 
-      return Math.min(30, Number((2 + lv * 0.25).toFixed(1)));
+      return Math.min(27, Number((2 + lv * 0.21).toFixed(1)));
     },
   },
 
   bossStats: {
-    dodgeCap: 35,
-    critCap: 45,
+    dodgeCap: 30,
+    critCap: 40,
 
     hpFormula(level) {
       const lv = Number(level || 1);
@@ -346,13 +352,13 @@ const balanceConfig = {
     dodgeFormula(level) {
       const lv = Number(level || 1);
 
-      return Math.min(35, Number((3 + lv * 0.18).toFixed(1)));
+      return Math.min(30, Number((2.5 + lv * 0.14).toFixed(1)));
     },
 
     critFormula(level) {
       const lv = Number(level || 1);
 
-      return Math.min(45, Number((5 + lv * 0.28).toFixed(1)));
+      return Math.min(40, Number((4 + lv * 0.22).toFixed(1)));
     },
   },
 
@@ -368,24 +374,24 @@ const balanceConfig = {
     statRolls: {
       Common: {
         min: 1.0,
-        max: 1.05,
+        max: 1.04,
       },
 
       Rare: {
-        min: 1.15,
-        max: 1.3,
+        min: 1.12,
+        max: 1.24,
       },
     },
 
     statCaps: {
       Common: {
-        dodge: 3,
-        crit: 4,
+        dodge: 2.5,
+        crit: 3.5,
       },
 
       Rare: {
-        dodge: 4,
-        crit: 5.5,
+        dodge: 3.5,
+        crit: 4.8,
       },
     },
 
@@ -400,31 +406,31 @@ const balanceConfig = {
 
     statRolls: {
       Rare: {
-        min: 1.25,
-        max: 1.45,
+        min: 1.2,
+        max: 1.38,
       },
 
       Legendary: {
-        min: 1.55,
-        max: 1.85,
+        min: 1.45,
+        max: 1.7,
       },
     },
 
     statCaps: {
       Rare: {
-        dodge: 5,
-        crit: 7,
+        dodge: 4.5,
+        crit: 6,
       },
 
       Legendary: {
-        dodge: 7,
-        crit: 10,
+        dodge: 5.5,
+        crit: 7.5,
       },
     },
 
     priceMultiplier: {
       Rare: 2,
-      Legendary: 4.5,
+      Legendary: 4.2,
     },
   },
 
@@ -536,19 +542,19 @@ function getLevelStatGain(classId = "swordsman", level = 1) {
   let stageMultiplier = 1;
 
   if (lv > 80) {
-    stageMultiplier = 1.18;
+    stageMultiplier = 1.15;
   } else if (lv > 50) {
-    stageMultiplier = 1.1;
+    stageMultiplier = 1.08;
   } else if (lv > 20) {
-    stageMultiplier = 1.04;
+    stageMultiplier = 1.03;
   }
 
   return {
     maxHp: Math.floor(Number(growth.maxHp || 0) * stageMultiplier),
     attack: Number((Number(growth.attack || 0) * stageMultiplier).toFixed(2)),
     defense: Number((Number(growth.defense || 0) * stageMultiplier).toFixed(2)),
-    dodge: Number(Number(growth.dodge || 0).toFixed(2)),
-    crit: Number(Number(growth.crit || 0).toFixed(2)),
+    dodge: Number(Number(growth.dodge || 0).toFixed(3)),
+    crit: Number(Number(growth.crit || 0).toFixed(3)),
   };
 }
 
@@ -585,7 +591,7 @@ function getItemScaleByTierIndex(index) {
   const safeIndex = Math.max(0, Number(index || 0));
 
   return Number(
-    (1 + safeIndex * Number(balanceConfig.item.scalePerTier || 0.45)).toFixed(2)
+    (1 + safeIndex * Number(balanceConfig.item.scalePerTier || 0.38)).toFixed(2)
   );
 }
 
@@ -595,7 +601,7 @@ function getItemPercentScaleByTierIndex(index) {
   return Number(
     (
       1 +
-      safeIndex * Number(balanceConfig.item.percentScalePerTier || 0.04)
+      safeIndex * Number(balanceConfig.item.percentScalePerTier || 0.03)
     ).toFixed(2)
   );
 }
@@ -795,10 +801,10 @@ function calculatePower(player = {}) {
 
   return Math.floor(
     attack * Number(formula.attack || 1) +
-      defense * Number(formula.defense || 1.4) +
-      maxHp * Number(formula.maxHp || 0.18) +
-      dodge * Number(formula.dodge || 6) +
-      crit * Number(formula.crit || 6) +
+      defense * Number(formula.defense || 1.35) +
+      maxHp * Number(formula.maxHp || 0.16) +
+      dodge * Number(formula.dodge || 4.5) +
+      crit * Number(formula.crit || 4.5) +
       level * Number(formula.level || 100)
   );
 }

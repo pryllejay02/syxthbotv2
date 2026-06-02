@@ -43,9 +43,72 @@ function getTimestampMillis(value) {
     return value.toDate().getTime();
   }
 
-  const parsed = new Date(value).getTime();
+  const parsedNumber = Number(value);
 
-  return Number.isNaN(parsed) ? 0 : parsed;
+  if (!Number.isNaN(parsedNumber)) {
+    return parsedNumber;
+  }
+
+  const parsedDate = new Date(value).getTime();
+
+  return Number.isNaN(parsedDate) ? 0 : parsedDate;
+}
+
+function getBossExpireMinutes() {
+  return Number(
+    balanceConfig.boss?.bossExpireMinutes ||
+      bossConfig.bossExpireMinutes ||
+      120
+  );
+}
+
+function getBossStat(boss = {}, statName, fallback = 0) {
+  return Number(boss[statName] ?? fallback);
+}
+
+function getBossRecommendedLevel(boss = {}) {
+  return {
+    min: Number(boss.recommendedLevel?.min || 1),
+    max: Number(boss.recommendedLevel?.max || boss.level || 1),
+  };
+}
+
+function getBossRewards(boss = {}) {
+  return {
+    gold: Number(boss.rewards?.gold || 0),
+    exp: Number(boss.rewards?.exp || 0),
+  };
+}
+
+function buildBossData(worldId, tier, boss) {
+  const hp = getBossStat(boss, "hp", 1);
+  const attack = getBossStat(boss, "attack", 1);
+  const defense = getBossStat(boss, "defense", 0);
+  const dodge = getBossStat(boss, "dodge", 0);
+  const crit = getBossStat(boss, "crit", 0);
+
+  return {
+    worldId,
+    bossId: boss.id,
+    bossName: boss.name,
+    tier,
+
+    level: Number(boss.level || 1),
+
+    hp,
+    maxHp: hp,
+    attack,
+    defense,
+    dodge,
+    crit,
+
+    recommendedLevel: getBossRecommendedLevel(boss),
+    rewards: getBossRewards(boss),
+
+    status: "active",
+    spawnedAt: new Date(),
+    updatedAt: new Date(),
+  };
 }
 
 async function deleteBossData(worldId) {
@@ -91,7 +154,7 @@ async function clearOldBossIfNeeded(worldId, existingBoss) {
   }
 
   const spawnedAt = getTimestampMillis(existingBoss.spawnedAt);
-  const expireMinutes = Number(bossConfig.bossExpireMinutes || 120);
+  const expireMinutes = getBossExpireMinutes();
   const expiresAt = spawnedAt + expireMinutes * 60 * 1000;
 
   if (spawnedAt && Date.now() >= expiresAt) {
@@ -144,25 +207,7 @@ async function spawnBoss(client, worldId, tier) {
     return null;
   }
 
-  const bossData = {
-    worldId,
-    bossId: boss.id,
-    bossName: boss.name,
-    tier,
-    level: boss.level,
-
-    hp: boss.hp,
-    maxHp: boss.hp,
-    attack: boss.attack,
-    defense: boss.defense,
-
-    recommendedLevel: boss.recommendedLevel,
-    rewards: boss.rewards,
-
-    status: "active",
-    spawnedAt: new Date(),
-    updatedAt: new Date(),
-  };
+  const bossData = buildBossData(worldId, tier, boss);
 
   await db.collection("worldBosses").doc(worldId).set(bossData);
 
@@ -178,11 +223,13 @@ async function spawnBoss(client, worldId, tier) {
       .setTitle(`👹 ${boss.name} Appeared!`)
       .setDescription(
         `🌍 World: **${worldId}**\n\n` +
-          `⭐ Level: **Lv.${boss.level}**\n` +
-          `📌 Recommended: **Lv.${boss.recommendedLevel.min}-${boss.recommendedLevel.max}**\n\n` +
-          `❤️ HP: **${boss.hp}/${boss.hp}**\n` +
-          `⚔️ Attack: **${boss.attack}**\n` +
-          `🛡️ Defense: **${boss.defense}**\n\n` +
+          `⭐ Level: **Lv.${bossData.level}**\n` +
+          `📌 Recommended: **Lv.${bossData.recommendedLevel.min}-${bossData.recommendedLevel.max}**\n\n` +
+          `❤️ HP: **${bossData.hp}/${bossData.maxHp}**\n` +
+          `⚔️ Attack: **${bossData.attack}**\n` +
+          `🛡️ Defense: **${bossData.defense}**\n` +
+          `💨 Dodge: **${bossData.dodge}%**\n` +
+          `💥 Crit: **${bossData.crit}%**\n\n` +
           `⚠️ RAID BOSS ACTIVE\n\n` +
           `Use \`!s raid hit\`\n` +
           `Use \`!s raid status\``
@@ -320,7 +367,17 @@ async function getAllDamageRanking(worldId) {
 }
 
 function getRewardPenalty(playerLevel, bossLevel) {
-  return balanceConfig.getBossRewardPenalty(playerLevel, bossLevel);
+  if (typeof balanceConfig.getBossRewardPenalty === "function") {
+    return balanceConfig.getBossRewardPenalty(playerLevel, bossLevel);
+  }
+
+  return {
+    goldMultiplier: 1,
+    expMultiplier: 1,
+    dropMultiplier: 1,
+    legendaryAllowed: true,
+    label: "Full Reward",
+  };
 }
 
 function rollChance(percent) {
@@ -329,15 +386,27 @@ function rollChance(percent) {
 
 function getLegendaryChanceByRank(rank) {
   if (rank === 1) {
-    return bossConfig.rankingRewards.top1.legendaryChance;
+    return Number(
+      balanceConfig.boss?.legendaryChance?.top1 ??
+        bossConfig.rankingRewards?.top1?.legendaryChance ??
+        0
+    );
   }
 
   if (rank >= 2 && rank <= 5) {
-    return bossConfig.rankingRewards.top2to5.legendaryChance;
+    return Number(
+      balanceConfig.boss?.legendaryChance?.top2to5 ??
+        bossConfig.rankingRewards?.top2to5?.legendaryChance ??
+        0
+    );
   }
 
   if (rank >= 6 && rank <= 10) {
-    return bossConfig.rankingRewards.top6to10.legendaryChance;
+    return Number(
+      balanceConfig.boss?.legendaryChance?.top6to10 ??
+        bossConfig.rankingRewards?.top6to10?.legendaryChance ??
+        0
+    );
   }
 
   return 0;

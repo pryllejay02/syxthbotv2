@@ -8,6 +8,7 @@ const {
 const { db } = require("../../firebase/firebase");
 const partyConfig = require("../data/partyConfig");
 const bossConfig = require("../data/bossConfig");
+const balanceConfig = require("../data/balanceConfig");
 
 const {
   getActiveBoss,
@@ -15,10 +16,12 @@ const {
   clearOldBossIfNeeded,
 } = require("../services/bossService");
 
-function getBossExpireMs() {
-  const expireMinutes = Number(bossConfig.bossExpireMinutes || 120);
+function getBossExpireMinutes() {
+  return Number(bossConfig.bossExpireMinutes || 120);
+}
 
-  return expireMinutes * 60 * 1000;
+function getBossExpireMs() {
+  return getBossExpireMinutes() * 60 * 1000;
 }
 
 function getBossByTierOrId(input) {
@@ -43,6 +46,8 @@ function getBossByTierOrId(input) {
   }
 
   for (const [tier, bosses] of Object.entries(bossConfig.bosses || {})) {
+    if (!Array.isArray(bosses)) continue;
+
     const foundBoss = bosses.find(
       (boss) => String(boss.id || "").toLowerCase() === key
     );
@@ -64,6 +69,8 @@ function getAvailableBossHelp() {
   const bossIds = [];
 
   for (const bosses of Object.values(bossConfig.bosses || {})) {
+    if (!Array.isArray(bosses)) continue;
+
     bosses.forEach((boss) => {
       if (boss.id) bossIds.push(boss.id);
     });
@@ -77,28 +84,77 @@ function getAvailableBossHelp() {
   );
 }
 
-function normalizeBossData(boss) {
-  const level = Number(boss.level || 1);
-  const hp = Number(boss.hp || 1);
-  const attack = Number(boss.attack || 1);
-  const defense = Number(boss.defense || 0);
+function getBalancedBossStats(boss = {}) {
+  if (typeof balanceConfig.getBalancedBossStats === "function") {
+    return balanceConfig.getBalancedBossStats(boss);
+  }
+
+  return {
+    hp: Number(boss.hp || 1),
+    attack: Number(boss.attack || 1),
+    defense: Number(boss.defense || 0),
+    dodge: Number(boss.dodge || 0),
+    crit: Number(boss.crit || 0),
+  };
+}
+
+function normalizeRecommendedLevel(boss = {}, level = 1) {
+  const recommendedLevel = boss.recommendedLevel || {};
+
+  return {
+    min: Math.max(1, Number(recommendedLevel.min || level - 5)),
+    max: Math.max(1, Number(recommendedLevel.max || level + 10)),
+  };
+}
+
+function normalizeRewards(boss = {}) {
+  const rewards = boss.rewards || {};
+
+  return {
+    gold: Math.max(0, Number(rewards.gold || 0)),
+    exp: Math.max(0, Number(rewards.exp || 0)),
+  };
+}
+
+function normalizeBossData(boss = {}) {
+  const level = Math.max(1, Number(boss.level || 1));
+
+  const stats = getBalancedBossStats({
+    ...boss,
+    level,
+  });
+
+  const hp = Math.max(1, Number(stats.hp || boss.hp || 1));
+  const attack = Math.max(1, Number(stats.attack || boss.attack || 1));
+  const defense = Math.max(0, Number(stats.defense || boss.defense || 0));
+
+  const dodge = Math.max(
+    0,
+    Number(Number(stats.dodge || boss.dodge || 0).toFixed(1))
+  );
+
+  const crit = Math.max(
+    0,
+    Number(Number(stats.crit || boss.crit || 0).toFixed(1))
+  );
 
   return {
     ...boss,
+
+    id: boss.id || "unknown_boss",
+    name: boss.name || "Unknown Boss",
+
     level,
+
     hp,
+    maxHp: hp,
     attack,
     defense,
+    dodge,
+    crit,
 
-    recommendedLevel: boss.recommendedLevel || {
-      min: Math.max(1, level - 5),
-      max: level + 10,
-    },
-
-    rewards: boss.rewards || {
-      gold: 0,
-      exp: 0,
-    },
+    recommendedLevel: normalizeRecommendedLevel(boss, level),
+    rewards: normalizeRewards(boss),
   };
 }
 
@@ -116,6 +172,7 @@ async function sendBossAnnouncement(client, worldId, worldConfig, rawBoss) {
 
   if (boss.image) {
     bossImageName = path.basename(boss.image);
+
     bossImage = new AttachmentBuilder(boss.image, {
       name: bossImageName,
     });
@@ -128,10 +185,12 @@ async function sendBossAnnouncement(client, worldId, worldConfig, rawBoss) {
       `🌍 World: **${worldId}**\n\n` +
         `⭐ Level: **Lv.${boss.level}**\n` +
         `📌 Recommended: **Lv.${boss.recommendedLevel.min}-${boss.recommendedLevel.max}**\n\n` +
-        `❤️ HP: **${boss.hp}/${boss.hp}**\n` +
+        `❤️ HP: **${boss.hp}/${boss.maxHp}**\n` +
         `⚔️ Attack: **${boss.attack}**\n` +
-        `🛡️ Defense: **${boss.defense}**\n\n` +
-        `🎁 Rewards: **${boss.rewards.exp || 0} EXP** • **${boss.rewards.gold || 0} Gold**\n\n` +
+        `🛡️ Defense: **${boss.defense}**\n` +
+        `💨 Dodge: **${boss.dodge}%**\n` +
+        `💥 Crit: **${boss.crit}%**\n\n` +
+        `🎁 Rewards: **${boss.rewards.exp} EXP** • **${boss.rewards.gold} Gold**\n\n` +
         `⚠️ RAID BOSS ACTIVE\n\n` +
         `Use \`!s raid hit\`\n` +
         `Use \`!s raid status\``
@@ -240,6 +299,7 @@ async function summonBoss(message, worldId, bossInput) {
 
   const bossData = {
     worldId,
+
     bossId: boss.id,
     bossName: boss.name,
     tier,
@@ -247,14 +307,17 @@ async function summonBoss(message, worldId, bossInput) {
     level: boss.level,
 
     hp: boss.hp,
-    maxHp: boss.hp,
+    maxHp: boss.maxHp,
     attack: boss.attack,
     defense: boss.defense,
+    dodge: boss.dodge,
+    crit: boss.crit,
 
     recommendedLevel: boss.recommendedLevel,
     rewards: boss.rewards,
 
     status: "active",
+
     spawnedAt,
     expiresAt,
 
@@ -279,8 +342,13 @@ async function summonBoss(message, worldId, bossInput) {
       `🌍 World: **${worldId}**\n` +
       `🏷️ Tier: **${tier}**\n` +
       `⭐ Level: **Lv.${boss.level}**\n` +
-      `❤️ HP: **${boss.hp}/${boss.hp}**\n` +
-      `⏳ Expires In: **${bossConfig.bossExpireMinutes || 120} minutes**\n` +
+      `❤️ HP: **${boss.hp}/${boss.maxHp}**\n` +
+      `⚔️ Attack: **${boss.attack}**\n` +
+      `🛡️ Defense: **${boss.defense}**\n` +
+      `💨 Dodge: **${boss.dodge}%**\n` +
+      `💥 Crit: **${boss.crit}%**\n` +
+      `🎁 Rewards: **${boss.rewards.exp} EXP** • **${boss.rewards.gold} Gold**\n` +
+      `⏳ Expires In: **${getBossExpireMinutes()} minutes**\n` +
       `🧹 Old Data Cleared: **${cleanupResult.cleared ? "Yes" : "No"}**\n` +
       `📢 Announcement: **${announced ? "Sent" : "Channel not found"}**`
   );

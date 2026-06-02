@@ -11,38 +11,81 @@ function getDefaultEquipment() {
   };
 }
 
+function getDefaultStats() {
+  return {
+    attack: 10,
+    defense: 5,
+    maxHp: 100,
+    dodge: 0,
+    crit: 0,
+  };
+}
+
+function normalizeStats(stats = {}) {
+  return {
+    attack: Number(stats.attack || 0),
+    defense: Number(stats.defense || 0),
+    maxHp: Number(stats.maxHp || 0),
+    dodge: Number(stats.dodge || 0),
+    crit: Number(stats.crit || 0),
+  };
+}
+
+function getStatCaps() {
+  return {
+    dodge: Number(balanceConfig.statCaps?.dodge || 60),
+    crit: Number(balanceConfig.statCaps?.crit || 75),
+  };
+}
+
 function calculateTotalStats(
-  baseStats,
+  baseStats = getDefaultStats(),
   equipment = getDefaultEquipment()
 ) {
-  let attack = Number(baseStats.attack || 10);
-  let defense = Number(baseStats.defense || 5);
-  let maxHp = Number(baseStats.maxHp || 100);
+  const safeBaseStats = {
+    ...getDefaultStats(),
+    ...(baseStats || {}),
+  };
 
-  let dodge = Number(baseStats.dodge || 0);
-  let crit = Number(baseStats.crit || 0);
+  let attack = Number(safeBaseStats.attack || 10);
+  let defense = Number(safeBaseStats.defense || 5);
+  let maxHp = Number(safeBaseStats.maxHp || 100);
 
-  Object.values(equipment).forEach((item) => {
+  let dodge = Number(safeBaseStats.dodge || 0);
+  let crit = Number(safeBaseStats.crit || 0);
+
+  const safeEquipment = {
+    ...getDefaultEquipment(),
+    ...(equipment || {}),
+  };
+
+  Object.values(safeEquipment).forEach((item) => {
     if (!item || !item.stats) return;
 
-    attack += Number(item.stats.attack || 0);
-    defense += Number(item.stats.defense || 0);
-    maxHp += Number(item.stats.maxHp || 0);
+    const itemStats = normalizeStats(item.stats);
 
-    dodge += Number(item.stats.dodge || 0);
-    crit += Number(item.stats.crit || 0);
+    attack += itemStats.attack;
+    defense += itemStats.defense;
+    maxHp += itemStats.maxHp;
+
+    dodge += itemStats.dodge;
+    crit += itemStats.crit;
   });
 
-  const dodgeCap = Number(balanceConfig.statCaps?.dodge || 75);
-  const critCap = Number(balanceConfig.statCaps?.crit || 85);
+  const caps = getStatCaps();
 
-  dodge = Number(Math.min(dodge, dodgeCap).toFixed(2));
-  crit = Number(Math.min(crit, critCap).toFixed(2));
+  dodge = Number(
+    Math.max(0, Math.min(dodge, caps.dodge)).toFixed(2)
+  );
+
+  crit = Number(
+    Math.max(0, Math.min(crit, caps.crit)).toFixed(2)
+  );
 
   return {
-    attack: Math.floor(attack),
-    defense: Math.floor(defense),
-    maxHp: Math.floor(maxHp),
+    attack: Math.floor(Math.max(1, attack)),
+    defense: Math.floor(Math.max(0, defense)),
+    maxHp: Math.floor(Math.max(1, maxHp)),
     dodge,
     crit,
   };
@@ -50,5 +93,8 @@ function calculateTotalStats(
 
 module.exports = {
   getDefaultEquipment,
+  getDefaultStats,
+  normalizeStats,
+  getStatCaps,
   calculateTotalStats,
 };

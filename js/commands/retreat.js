@@ -1,14 +1,32 @@
 const { db } = require("../../firebase/firebase");
 const balanceConfig = require("../data/balanceConfig");
 
-const RETREAT_GOLD_PENALTY_PERCENT =
-  balanceConfig.economy.retreat.goldPenaltyPercent;
+const RETREAT_GOLD_PENALTY_PERCENT = Number(
+  balanceConfig.economy?.retreat?.goldPenaltyPercent || 10
+);
 
-const MIN_RETREAT_PENALTY =
-  balanceConfig.economy.retreat.minPenalty;
+const MIN_RETREAT_PENALTY = Number(
+  balanceConfig.economy?.retreat?.minPenalty || 10
+);
 
-const MAX_RETREAT_PENALTY =
-  balanceConfig.economy.retreat.maxPenalty;
+const MAX_RETREAT_PENALTY = Number(
+  balanceConfig.economy?.retreat?.maxPenalty || 500
+);
+
+function getRetreatPenalty(gold) {
+  const safeGold = Math.max(0, Number(gold || 0));
+
+  const calculatedPenalty = Math.floor(
+    safeGold * (RETREAT_GOLD_PENALTY_PERCENT / 100)
+  );
+
+  const cappedPenalty = Math.min(
+    MAX_RETREAT_PENALTY,
+    Math.max(MIN_RETREAT_PENALTY, calculatedPenalty)
+  );
+
+  return Math.min(safeGold, Math.max(0, cappedPenalty));
+}
 
 module.exports = async function retreatCommand(message) {
   const userId = message.author.id;
@@ -37,18 +55,8 @@ module.exports = async function retreatCommand(message) {
     const player = playerDoc.data();
     const battle = battleDoc.data();
 
-    const gold = Number(player.gold || 0);
-
-    const calculatedPenalty = Math.floor(
-      gold * (RETREAT_GOLD_PENALTY_PERCENT / 100)
-    );
-
-    const penalty = Math.min(
-      MAX_RETREAT_PENALTY,
-      Math.max(MIN_RETREAT_PENALTY, calculatedPenalty)
-    );
-
-    const actualPenalty = Math.min(gold, penalty);
+    const gold = Math.max(0, Number(player.gold || 0));
+    const actualPenalty = getRetreatPenalty(gold);
     const newGold = Math.max(0, gold - actualPenalty);
 
     transaction.update(playerRef, {
@@ -75,6 +83,7 @@ module.exports = async function retreatCommand(message) {
   return message.reply(
     `🏃 You retreated from **${result.battle.monsterName}**.\n\n` +
       `💰 Retreat Penalty: **${result.penalty} Gold**\n` +
+      `🪙 Previous Gold: **${result.oldGold}**\n` +
       `🪙 Remaining Gold: **${result.newGold}**`
   );
 };

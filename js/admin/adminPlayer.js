@@ -92,7 +92,17 @@ function normalizeId(value) {
 }
 
 function getQuality(item = {}) {
-  return item.quality || "Common";
+  const quality = String(item.quality || "Common");
+
+  if (["Starter", "Common", "Rare", "Legendary"].includes(quality)) {
+    return quality;
+  }
+
+  return "Common";
+}
+
+function getSource(item = {}) {
+  return String(item.source || "shop").toLowerCase();
 }
 
 function isStarterItem(item = {}) {
@@ -126,16 +136,13 @@ function findBaseShopItem(item = {}) {
 
   const prefixMatches = shopItems
     .filter((shopItem) => itemId.startsWith(normalizeId(shopItem.id)))
-    .sort(
-      (a, b) =>
-        normalizeId(b.id).length - normalizeId(a.id).length
-    );
+    .sort((a, b) => normalizeId(b.id).length - normalizeId(a.id).length);
 
   return prefixMatches[0] || null;
 }
 
 function getRollConfigBySource(item = {}, quality = "Common") {
-  const source = String(item.source || "").toLowerCase();
+  const source = getSource(item);
 
   if (source === "boss_raid") {
     return balanceConfig.bossDrop?.statRolls?.[quality] || null;
@@ -155,7 +162,7 @@ function getRollConfigBySource(item = {}, quality = "Common") {
 function getDeterministicMultiplier(item = {}, quality = "Common") {
   if (quality === "Starter") return 0;
 
-  const source = String(item.source || "").toLowerCase();
+  const source = getSource(item);
 
   if (!source || source === "shop") {
     return Number(balanceConfig.quality?.[quality]?.statMultiplier || 1);
@@ -170,37 +177,11 @@ function getDeterministicMultiplier(item = {}, quality = "Common") {
     return Number(((min + max) / 2).toFixed(3));
   }
 
-  if (quality === "Rare") {
-    const rollConfig =
-      balanceConfig.monsterDrop?.statRolls?.Rare ||
-      balanceConfig.adminItem?.statRolls?.Rare;
-
-    if (rollConfig) {
-      const min = Number(rollConfig.min || 1);
-      const max = Number(rollConfig.max || min);
-
-      return Number(((min + max) / 2).toFixed(3));
-    }
-  }
-
-  if (quality === "Legendary") {
-    const rollConfig =
-      balanceConfig.bossDrop?.statRolls?.Legendary ||
-      balanceConfig.adminItem?.statRolls?.Legendary;
-
-    if (rollConfig) {
-      const min = Number(rollConfig.min || 1);
-      const max = Number(rollConfig.max || min);
-
-      return Number(((min + max) / 2).toFixed(3));
-    }
-  }
-
   return Number(balanceConfig.quality?.[quality]?.statMultiplier || 1);
 }
 
 function getPriceMultiplierBySource(item = {}, quality = "Common") {
-  const source = String(item.source || "").toLowerCase();
+  const source = getSource(item);
 
   if (source === "boss_raid") {
     return Number(balanceConfig.bossDrop?.priceMultiplier?.[quality] || 1);
@@ -210,16 +191,111 @@ function getPriceMultiplierBySource(item = {}, quality = "Common") {
     return Number(balanceConfig.monsterDrop?.priceMultiplier?.[quality] || 1);
   }
 
+  if (source === "admin_generated" || source === "admin") {
+    return Number(
+      balanceConfig.adminItem?.priceMultiplier?.[quality] ||
+        balanceConfig.quality?.[quality]?.priceMultiplier ||
+        1
+    );
+  }
+
   return Number(balanceConfig.quality?.[quality]?.priceMultiplier || 1);
 }
 
-function scaleStats(stats = {}, multiplier = 1) {
+function capPercentStat(statName, value, quality = "Common", source = "shop") {
+  const statValue = Number(value || 0);
+
+  if (typeof balanceConfig.capItemPercentStat === "function") {
+    return balanceConfig.capItemPercentStat(
+      statName,
+      statValue,
+      quality,
+      source
+    );
+  }
+
+  let cap = Number(balanceConfig.item?.statCaps?.[statName] || 0);
+
+  if (source === "monster_drop") {
+    cap = Number(
+      balanceConfig.monsterDrop?.statCaps?.[quality]?.[statName] || cap
+    );
+  }
+
+  if (source === "boss_raid") {
+    cap = Number(
+      balanceConfig.bossDrop?.statCaps?.[quality]?.[statName] || cap
+    );
+  }
+
+  if (source === "admin_generated" || source === "admin") {
+    if (quality === "Rare") {
+      cap = Number(
+        balanceConfig.monsterDrop?.statCaps?.Rare?.[statName] || cap
+      );
+    }
+
+    if (quality === "Legendary") {
+      cap = Number(
+        balanceConfig.bossDrop?.statCaps?.Legendary?.[statName] || cap
+      );
+    }
+  }
+
+  if (!cap) return statValue;
+
+  return Math.min(statValue, cap);
+}
+
+function scaleStats(
+  stats = {},
+  multiplier = 1,
+  quality = "Common",
+  source = "shop"
+) {
   return {
     attack: Math.floor(Number(stats.attack || 0) * multiplier),
     defense: Math.floor(Number(stats.defense || 0) * multiplier),
     maxHp: Math.floor(Number(stats.maxHp || 0) * multiplier),
-    dodge: Number((Number(stats.dodge || 0) * multiplier).toFixed(1)),
-    crit: Number((Number(stats.crit || 0) * multiplier).toFixed(1)),
+
+    dodge: capPercentStat(
+      "dodge",
+      Number((Number(stats.dodge || 0) * multiplier).toFixed(1)),
+      quality,
+      source
+    ),
+
+    crit: capPercentStat(
+      "crit",
+      Number((Number(stats.crit || 0) * multiplier).toFixed(1)),
+      quality,
+      source
+    ),
+  };
+}
+
+function normalizeFallbackStats(item = {}) {
+  const quality = getQuality(item);
+  const source = getSource(item);
+
+  return {
+    attack: Math.floor(Number(item.stats?.attack || 0)),
+    defense: Math.floor(Number(item.stats?.defense || 0)),
+    maxHp: Math.floor(Number(item.stats?.maxHp || 0)),
+
+    dodge: capPercentStat(
+      "dodge",
+      Number(item.stats?.dodge || 0),
+      quality,
+      source
+    ),
+
+    crit: capPercentStat(
+      "crit",
+      Number(item.stats?.crit || 0),
+      quality,
+      source
+    ),
   };
 }
 
@@ -236,10 +312,24 @@ function getCleanItemName(baseName = "Unknown Item", quality = "Common") {
   return `${quality} ${cleanBaseName}`;
 }
 
+function makeDescription(stats = {}) {
+  const parts = [];
+
+  if (stats.attack) parts.push(`+${stats.attack} ATK`);
+  if (stats.defense) parts.push(`+${stats.defense} DEF`);
+  if (stats.maxHp) parts.push(`+${stats.maxHp} HP`);
+  if (stats.dodge) parts.push(`+${stats.dodge}% Dodge`);
+  if (stats.crit) parts.push(`+${stats.crit}% Crit`);
+
+  return parts.length ? parts.join(", ") : "No bonus stats";
+}
+
 function rebalanceItemStats(item = {}) {
   if (!item) return null;
 
   const quality = getQuality(item);
+  const source = getSource(item);
+  const baseItem = findBaseShopItem(item);
 
   if (isStarterItem(item)) {
     return {
@@ -255,28 +345,58 @@ function rebalanceItemStats(item = {}) {
       quantity: Math.max(1, Number(item.quantity || 1)),
 
       stats: getDefaultStats(),
+      description: item.description || "Starter weapon.",
     };
   }
 
   if (isConsumable(item)) {
+    const sourceItem = baseItem || item;
+
     return {
       ...item,
+
+      id: item.id || sourceItem.id,
+      baseItemId: sourceItem.baseItemId || sourceItem.id || item.baseItemId,
+
+      name: sourceItem.name || item.name || "Unknown Consumable",
+      type: sourceItem.type || item.type || "Consumable",
 
       quality,
       qualityEmoji: item.qualityEmoji || getQualityEmoji(quality),
 
+      requiredLevel: Number(sourceItem.requiredLevel || item.requiredLevel || 1),
+      compatibleClasses:
+        sourceItem.compatibleClasses || item.compatibleClasses || ["all"],
+
+      price: Math.max(
+        0,
+        Math.floor(Number(sourceItem.price || item.price || 0))
+      ),
+
+      description:
+        sourceItem.description || item.description || "Consumable item.",
+
       quantity: Math.max(1, Number(item.quantity || 1)),
 
-      stats: item.stats || getDefaultStats(),
+      stats: getDefaultStats(),
 
-      healPercent: Number(item.healPercent || 0),
-      healAmount: Number(item.healAmount || item.heal || 0),
+      healPercent: Number(sourceItem.healPercent || item.healPercent || 0),
+      healAmount: Number(
+        sourceItem.healAmount ||
+          sourceItem.heal ||
+          item.healAmount ||
+          item.heal ||
+          0
+      ),
+
+      source: item.source || "shop",
+      emoji: sourceItem.emoji || item.emoji || "🧪",
     };
   }
 
-  const baseItem = findBaseShopItem(item);
-
   if (!baseItem) {
+    const fallbackStats = normalizeFallbackStats(item);
+
     return {
       ...item,
 
@@ -285,20 +405,18 @@ function rebalanceItemStats(item = {}) {
 
       quantity: Math.max(1, Number(item.quantity || 1)),
 
-      stats: {
-        attack: Number(item.stats?.attack || 0),
-        defense: Number(item.stats?.defense || 0),
-        maxHp: Number(item.stats?.maxHp || 0),
-        dodge: Number(item.stats?.dodge || 0),
-        crit: Number(item.stats?.crit || 0),
-      },
+      stats: fallbackStats,
+      description: makeDescription(fallbackStats),
     };
   }
 
   const multiplier = getDeterministicMultiplier(item, quality);
+
   const rebalancedStats = scaleStats(
     baseItem.stats || getDefaultStats(),
-    multiplier
+    multiplier,
+    quality,
+    source
   );
 
   const priceMultiplier = getPriceMultiplierBySource(item, quality);
@@ -309,7 +427,11 @@ function rebalanceItemStats(item = {}) {
     id: item.id || baseItem.id,
     baseItemId: baseItem.id,
 
-    name: getCleanItemName(baseItem.name, quality),
+    name:
+      source === "shop"
+        ? baseItem.name
+        : getCleanItemName(baseItem.name, quality),
+
     type: baseItem.type || item.type || "Unknown",
 
     quality,
@@ -323,25 +445,18 @@ function rebalanceItemStats(item = {}) {
       Number(baseItem.price || item.price || 0) * priceMultiplier
     ),
 
-    description: baseItem.description || item.description || "",
-
+    description: makeDescription(rebalancedStats),
     stats: rebalancedStats,
 
     emoji: baseItem.emoji || item.emoji || "📦",
 
     quantity: Math.max(1, Number(item.quantity || 1)),
+    source,
   };
 }
 
-function normalizeStarterWeapon(player) {
-  const classId = player.classId || "swordsman";
+function getStarterWeaponItem(classId = "swordsman") {
   const starterWeapon = getStarterWeaponByClass(classId);
-
-  const currentWeapon = player.equipment?.weapon;
-
-  if (currentWeapon && !isStarterItem(currentWeapon)) {
-    return rebalanceItemStats(currentWeapon);
-  }
 
   return {
     id: `${classId}_starter_weapon`,
@@ -357,11 +472,23 @@ function normalizeStarterWeapon(player) {
     source: "starter",
     isStarter: true,
     quantity: 1,
-
     stats: getDefaultStats(),
-
     emoji: starterWeapon.emoji,
   };
+}
+
+function normalizeStarterWeapon(player) {
+  const classId = player.classId || "swordsman";
+  const currentWeapon = player.equipment?.weapon;
+
+  if (currentWeapon && !isStarterItem(currentWeapon)) {
+    return {
+      ...rebalanceItemStats(currentWeapon),
+      quantity: 1,
+    };
+  }
+
+  return getStarterWeaponItem(classId);
 }
 
 function normalizeEquipment(player = {}) {
@@ -390,9 +517,12 @@ function normalizeInventory(inventory = []) {
 }
 
 function recalculatePlayerStats(player = {}, targetLevel = null) {
-  const level = Number(targetLevel || player.level || 1);
-  const classId = player.classId || "swordsman";
+  const level = Math.max(
+    1,
+    Math.min(getMaxLevel(), Number(targetLevel || player.level || 1))
+  );
 
+  const classId = player.classId || "swordsman";
   const baseStats = getBaseStatsByClassLevel(classId, level);
 
   const equipment = normalizeEquipment({
@@ -412,25 +542,22 @@ function recalculatePlayerStats(player = {}, targetLevel = null) {
 }
 
 function getInventorySummary(inventory = []) {
-  const totalQuantity = inventory.reduce(
+  const safeInventory = Array.isArray(inventory) ? inventory : [];
+
+  const totalQuantity = safeInventory.reduce(
     (total, item) => total + Number(item.quantity || 1),
     0
   );
 
-  const starter = inventory.filter((item) => item.quality === "Starter").length;
-  const common = inventory.filter((item) => item.quality === "Common").length;
-  const rare = inventory.filter((item) => item.quality === "Rare").length;
-  const legendary = inventory.filter(
-    (item) => item.quality === "Legendary"
-  ).length;
-
   return {
-    stacks: inventory.length,
+    stacks: safeInventory.length,
     totalQuantity,
-    starter,
-    common,
-    rare,
-    legendary,
+
+    starter: safeInventory.filter((item) => item.quality === "Starter").length,
+    common: safeInventory.filter((item) => item.quality === "Common").length,
+    rare: safeInventory.filter((item) => item.quality === "Rare").length,
+    legendary: safeInventory.filter((item) => item.quality === "Legendary")
+      .length,
   };
 }
 
@@ -442,20 +569,6 @@ function getAdminReviveHp(maxHp) {
   return Math.max(
     1,
     Math.floor(Number(maxHp || 100) * (revivePercent / 100))
-  );
-}
-
-function getHpAfterRebalance(player, oldMaxHp, newMaxHp) {
-  const oldHp = Number(player.hp ?? oldMaxHp ?? newMaxHp);
-
-  if (oldHp <= 0) return 0;
-
-  const safeOldMaxHp = Math.max(1, Number(oldMaxHp || newMaxHp || 100));
-  const hpPercent = oldHp / safeOldMaxHp;
-
-  return Math.max(
-    1,
-    Math.min(newMaxHp, Math.floor(Number(newMaxHp || 100) * hpPercent))
   );
 }
 
@@ -487,7 +600,7 @@ module.exports = async function adminPlayer(message, args = []) {
       }
 
       const player = playerDoc.data();
-      const oldGold = Number(player.gold || 0);
+      const oldGold = Math.max(0, Number(player.gold || 0));
       const newGold = oldGold + amount;
 
       transaction.update(playerRef, {
@@ -538,6 +651,7 @@ module.exports = async function adminPlayer(message, args = []) {
 
       const player = playerDoc.data();
       const recalculated = recalculatePlayerStats(player, level);
+      const inventory = normalizeInventory(player.inventory || []);
 
       transaction.update(playerRef, {
         level,
@@ -545,6 +659,7 @@ module.exports = async function adminPlayer(message, args = []) {
 
         baseStats: recalculated.baseStats,
         equipment: recalculated.equipment,
+        inventory,
 
         attack: recalculated.totalStats.attack,
         defense: recalculated.totalStats.defense,
@@ -552,6 +667,10 @@ module.exports = async function adminPlayer(message, args = []) {
         dodge: recalculated.totalStats.dodge,
         crit: recalculated.totalStats.crit,
         hp: recalculated.totalStats.maxHp,
+
+        weapon:
+          recalculated.equipment.weapon?.name ||
+          getStarterWeaponByClass(recalculated.classId).name,
 
         reviveAvailableAt: null,
         raidReviveAvailableAt: null,
@@ -594,17 +713,32 @@ module.exports = async function adminPlayer(message, args = []) {
       }
 
       const player = playerDoc.data();
-      const maxHp = Number(player.maxHp || 100);
+      const recalculated = recalculatePlayerStats(player);
+      const inventory = normalizeInventory(player.inventory || []);
 
       transaction.update(playerRef, {
-        hp: maxHp,
+        baseStats: recalculated.baseStats,
+        equipment: recalculated.equipment,
+        inventory,
+
+        attack: recalculated.totalStats.attack,
+        defense: recalculated.totalStats.defense,
+        maxHp: recalculated.totalStats.maxHp,
+        dodge: recalculated.totalStats.dodge,
+        crit: recalculated.totalStats.crit,
+        hp: recalculated.totalStats.maxHp,
+
+        weapon:
+          recalculated.equipment.weapon?.name ||
+          getStarterWeaponByClass(recalculated.classId).name,
+
         updatedAt: new Date(),
       });
 
       return {
         ok: true,
         player,
-        maxHp,
+        maxHp: recalculated.totalStats.maxHp,
       };
     });
 
@@ -630,11 +764,28 @@ module.exports = async function adminPlayer(message, args = []) {
       }
 
       const player = playerDoc.data();
-      const maxHp = Number(player.maxHp || 100);
+      const recalculated = recalculatePlayerStats(player);
+      const inventory = normalizeInventory(player.inventory || []);
+
+      const maxHp = recalculated.totalStats.maxHp;
       const reviveHp = getAdminReviveHp(maxHp);
 
       transaction.update(playerRef, {
+        baseStats: recalculated.baseStats,
+        equipment: recalculated.equipment,
+        inventory,
+
+        attack: recalculated.totalStats.attack,
+        defense: recalculated.totalStats.defense,
+        maxHp: recalculated.totalStats.maxHp,
+        dodge: recalculated.totalStats.dodge,
+        crit: recalculated.totalStats.crit,
         hp: reviveHp,
+
+        weapon:
+          recalculated.equipment.weapon?.name ||
+          getStarterWeaponByClass(recalculated.classId).name,
+
         reviveAvailableAt: null,
         raidReviveAvailableAt: null,
         updatedAt: new Date(),
@@ -666,10 +817,7 @@ module.exports = async function adminPlayer(message, args = []) {
     }
 
     const player = playerDoc.data();
-    const inventory = Array.isArray(player.inventory)
-      ? player.inventory
-      : [];
-
+    const inventory = normalizeInventory(player.inventory || []);
     const summary = getInventorySummary(inventory);
 
     return message.reply(
@@ -685,90 +833,9 @@ module.exports = async function adminPlayer(message, args = []) {
   }
 
   if (subCommand === "repairplayer") {
-    const result = await db.runTransaction(async (transaction) => {
-      const playerDoc = await transaction.get(playerRef);
-
-      if (!playerDoc.exists) {
-        return {
-          ok: false,
-          message: "❌ Character not found.",
-        };
-      }
-
-      const player = playerDoc.data();
-
-      const oldStats = {
-        hp: Number(player.hp || 0),
-        maxHp: Number(player.maxHp || 0),
-        attack: Number(player.attack || 0),
-        defense: Number(player.defense || 0),
-        dodge: Number(player.dodge || 0),
-        crit: Number(player.crit || 0),
-      };
-
-      const inventory = normalizeInventory(player.inventory || []);
-      const recalculated = recalculatePlayerStats(player);
-
-      const repairedHp = getHpAfterRebalance(
-        player,
-        oldStats.maxHp,
-        recalculated.totalStats.maxHp
-      );
-
-      transaction.update(playerRef, {
-        level: recalculated.level,
-        exp: Number(player.exp || 0),
-        gold: Number(player.gold || 0),
-
-        baseStats: recalculated.baseStats,
-        equipment: recalculated.equipment,
-        inventory,
-
-        attack: recalculated.totalStats.attack,
-        defense: recalculated.totalStats.defense,
-        maxHp: recalculated.totalStats.maxHp,
-        dodge: recalculated.totalStats.dodge,
-        crit: recalculated.totalStats.crit,
-        hp: repairedHp,
-
-        monsterKills: Number(player.monsterKills || 0),
-        retreats: Number(player.retreats || 0),
-
-        reviveAvailableAt: player.reviveAvailableAt || null,
-        raidReviveAvailableAt: player.raidReviveAvailableAt || null,
-
-        updatedAt: new Date(),
-      });
-
-      return {
-        ok: true,
-        player,
-        oldStats,
-        repairedHp,
-        totalStats: recalculated.totalStats,
-      };
-    });
-
-    if (!result.ok) {
-      return message.reply(result.message || "❌ Repair player failed.");
-    }
-
     return message.reply(
-      `✅ Repaired and rebalanced player data for **${
-        result.player.username || target.username
-      }**.\n\n` +
-        `📉 **Old Stats**\n` +
-        `❤️ HP: **${result.oldStats.hp}/${result.oldStats.maxHp}**\n` +
-        `⚔️ ATK: **${result.oldStats.attack}**\n` +
-        `🛡️ DEF: **${result.oldStats.defense}**\n` +
-        `💨 Dodge: **${result.oldStats.dodge}%**\n` +
-        `💥 Crit: **${result.oldStats.crit}%**\n\n` +
-        `📊 **New Stats**\n` +
-        `❤️ HP: **${result.repairedHp}/${result.totalStats.maxHp}**\n` +
-        `⚔️ ATK: **${result.totalStats.attack}**\n` +
-        `🛡️ DEF: **${result.totalStats.defense}**\n` +
-        `💨 Dodge: **${result.totalStats.dodge}%**\n` +
-        `💥 Crit: **${result.totalStats.crit}%**`
+      "⚠️ `repairplayer` is now handled by `adminMaintenance.js`.\n\n" +
+        "Make sure your `admin.js` routes `repairplayer` to `adminMaintenance`, not `adminPlayer`."
     );
   }
 
@@ -779,7 +846,8 @@ module.exports = async function adminPlayer(message, args = []) {
       "`!s admin setlevel @player <1-99>`\n" +
       "`!s admin heal @player`\n" +
       "`!s admin revive @player`\n" +
-      "`!s admin inventory @player`\n" +
+      "`!s admin inventory @player`\n\n" +
+      "Maintenance:\n" +
       "`!s admin repairplayer @player`"
   );
 };

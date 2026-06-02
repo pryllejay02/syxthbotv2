@@ -5,46 +5,65 @@ const MAX_LEVEL = Number(
 );
 
 function getRequiredExp(level) {
-  return balanceConfig.getRequiredExp(level);
+  if (typeof balanceConfig.getRequiredExp === "function") {
+    return balanceConfig.getRequiredExp(level);
+  }
+
+  const lv = Math.max(1, Number(level || 1));
+
+  if (lv >= MAX_LEVEL) return Infinity;
+
+  return Math.floor(45 + lv * 32 + lv * lv * 7);
 }
 
 function getStatsGain(level, classId = "swordsman") {
-  return balanceConfig.getLevelStatGain(classId, level);
+  if (typeof balanceConfig.getLevelStatGain === "function") {
+    return balanceConfig.getLevelStatGain(classId, level);
+  }
+
+  return {
+    attack: 2,
+    defense: 1,
+    maxHp: 10,
+    dodge: 0.02,
+    crit: 0.02,
+  };
+}
+
+function getBaseStatsByClassLevel(classId = "swordsman", level = 1) {
+  if (typeof balanceConfig.getBaseStatsByClassLevel === "function") {
+    return balanceConfig.getBaseStatsByClassLevel(classId, level);
+  }
+
+  return {
+    attack: 10,
+    defense: 5,
+    maxHp: 100,
+    dodge: 0,
+    crit: 0,
+  };
 }
 
 function normalizeBaseStats(baseStats = {}) {
   return {
-    attack: Number(baseStats.attack || 10),
-    defense: Number(baseStats.defense || 5),
-    maxHp: Number(baseStats.maxHp || 100),
-    dodge: Number(baseStats.dodge || 0),
-    crit: Number(baseStats.crit || 0),
+    attack: Math.floor(Number(baseStats.attack || 10)),
+    defense: Math.floor(Number(baseStats.defense || 5)),
+    maxHp: Math.floor(Number(baseStats.maxHp || 100)),
+    dodge: Number(Number(baseStats.dodge || 0).toFixed(2)),
+    crit: Number(Number(baseStats.crit || 0).toFixed(2)),
   };
 }
 
-function getStartingBaseStats(player, level) {
-  if (player.baseStats) {
-    return normalizeBaseStats(player.baseStats);
-  }
-
-  return balanceConfig.getBaseStatsByClassLevel(
-    player.classId || "swordsman",
-    Number(level || 1)
-  );
-}
-
-function applyLevelUp(player, gainedExp) {
+function applyLevelUp(player = {}, gainedExp = 0) {
   let level = Number(player.level || 1);
   let exp = Number(player.exp || 0) + Number(gainedExp || 0);
 
   const classId = player.classId || "swordsman";
-  const baseStats = getStartingBaseStats(player, level);
 
-  let baseAttack = Number(baseStats.attack || 10);
-  let baseDefense = Number(baseStats.defense || 5);
-  let baseMaxHp = Number(baseStats.maxHp || 100);
-  let baseDodge = Number(baseStats.dodge || 0);
-  let baseCrit = Number(baseStats.crit || 0);
+  level = Math.max(1, Math.min(level, MAX_LEVEL));
+  exp = Math.max(0, exp);
+
+  const oldLevel = level;
 
   let leveledUp = false;
   let levelUps = 0;
@@ -54,14 +73,6 @@ function applyLevelUp(player, gainedExp) {
     level++;
     levelUps++;
     leveledUp = true;
-
-    const gain = getStatsGain(level, classId);
-
-    baseAttack += Number(gain.attack || 0);
-    baseDefense += Number(gain.defense || 0);
-    baseMaxHp += Number(gain.maxHp || 0);
-    baseDodge += Number(gain.dodge || 0);
-    baseCrit += Number(gain.crit || 0);
   }
 
   if (level >= MAX_LEVEL) {
@@ -69,16 +80,18 @@ function applyLevelUp(player, gainedExp) {
     exp = 0;
   }
 
+  // Important rebalance fix:
+  // Always rebuild baseStats from balanceConfig using the final level.
+  // This prevents old pre-rebalance baseStats from staying too high.
+  const baseStats = normalizeBaseStats(
+    getBaseStatsByClassLevel(classId, level)
+  );
+
   return {
+    oldLevel,
     level,
     exp,
-    baseStats: {
-      attack: Math.floor(baseAttack),
-      defense: Math.floor(baseDefense),
-      maxHp: Math.floor(baseMaxHp),
-      dodge: Number(baseDodge.toFixed(2)),
-      crit: Number(baseCrit.toFixed(2)),
-    },
+    baseStats,
     leveledUp,
     levelUps,
     nextLevelExp: getRequiredExp(level),
@@ -89,5 +102,7 @@ module.exports = {
   MAX_LEVEL,
   getRequiredExp,
   getStatsGain,
+  normalizeBaseStats,
+  getBaseStatsByClassLevel,
   applyLevelUp,
 };

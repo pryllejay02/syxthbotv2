@@ -1,6 +1,10 @@
 const path = require("path");
 const balanceConfig = require("./balanceConfig");
 
+function getBossSetting(pathValue, fallback) {
+  return Number(pathValue ?? fallback);
+}
+
 module.exports = {
   spawnSchedule: [
     {
@@ -30,9 +34,12 @@ module.exports = {
 
         level: 10,
 
-        hp: 10000,
-        attack: 50,
-        defense: 20,
+        // Rebalanced beginner boss.
+        hp: 6500,
+        attack: 45,
+        defense: 18,
+        dodge: 3,
+        crit: 5,
 
         recommendedLevel: {
           min: 5,
@@ -40,8 +47,8 @@ module.exports = {
         },
 
         rewards: {
-          gold: 500,
-          exp: 250,
+          gold: 450,
+          exp: 300,
         },
       },
 
@@ -56,18 +63,21 @@ module.exports = {
 
         level: 15,
 
-        hp: 15000,
-        attack: 70,
-        defense: 30,
+        // Slightly tankier than Goblin King, but still beginner-safe.
+        hp: 9000,
+        attack: 60,
+        defense: 24,
+        dodge: 2,
+        crit: 4,
 
         recommendedLevel: {
-          min: 5,
-          max: 20,
+          min: 8,
+          max: 22,
         },
 
         rewards: {
-          gold: 700,
-          exp: 350,
+          gold: 650,
+          exp: 450,
         },
       },
     ],
@@ -84,9 +94,12 @@ module.exports = {
 
         level: 35,
 
-        hp: 50000,
+        // Rebalanced for mid-game parties.
+        hp: 35000,
         attack: 120,
-        defense: 60,
+        defense: 55,
+        dodge: 6,
+        crit: 9,
 
         recommendedLevel: {
           min: 25,
@@ -95,7 +108,7 @@ module.exports = {
 
         rewards: {
           gold: 1500,
-          exp: 700,
+          exp: 900,
         },
       },
     ],
@@ -112,9 +125,13 @@ module.exports = {
 
         level: 80,
 
-        hp: 300000,
-        attack: 500,
-        defense: 250,
+        // Rebalanced from 300000 HP / 500 ATK / 250 DEF.
+        // Still strong, but no longer too punishing after item/stat rebalance.
+        hp: 180000,
+        attack: 360,
+        defense: 170,
+        dodge: 10,
+        crit: 15,
 
         recommendedLevel: {
           min: 70,
@@ -122,57 +139,68 @@ module.exports = {
         },
 
         rewards: {
-          gold: 5000,
-          exp: 3000,
+          gold: 4500,
+          exp: 2800,
         },
       },
     ],
   },
 
-  rankingDeleteMinutes: Number(
-    balanceConfig.boss?.rankingDeleteMinutes || 10
+  rankingDeleteMinutes: getBossSetting(
+    balanceConfig.boss?.rankingDeleteMinutes,
+    10
   ),
 
   // Boss will automatically disappear if not defeated.
-  bossExpireMinutes: Number(
-    balanceConfig.boss?.bossExpireMinutes || 120
+  bossExpireMinutes: getBossSetting(
+    balanceConfig.boss?.bossExpireMinutes,
+    120
   ),
 
   participationRewards: {
-    rareChance: Number(
-      balanceConfig.boss?.participationRareChance || 25
+    rareChance: getBossSetting(
+      balanceConfig.boss?.participationRareChance,
+      25
     ),
   },
 
   rankingRewards: {
     top1: {
-      legendaryChance: Number(
-        balanceConfig.boss?.legendaryChance?.top1 || 12
+      legendaryChance: getBossSetting(
+        balanceConfig.boss?.legendaryChance?.top1,
+        12
       ),
     },
 
     top2to5: {
-      legendaryChance: Number(
-        balanceConfig.boss?.legendaryChance?.top2to5 || 7
+      legendaryChance: getBossSetting(
+        balanceConfig.boss?.legendaryChance?.top2to5,
+        7
       ),
     },
 
     top6to10: {
-      legendaryChance: Number(
-        balanceConfig.boss?.legendaryChance?.top6to10 || 3
+      legendaryChance: getBossSetting(
+        balanceConfig.boss?.legendaryChance?.top6to10,
+        3
       ),
     },
   },
 
   partyBonus: {
-    legendaryChance: Number(
-      balanceConfig.boss?.partyBonus?.legendaryChance || 3
+    legendaryChance: getBossSetting(
+      balanceConfig.boss?.partyBonus?.legendaryChance,
+      3
     ),
-    gold: Number(
-      balanceConfig.boss?.partyBonus?.gold || 5
+
+    gold: getBossSetting(
+      balanceConfig.boss?.partyBonus?.gold,
+      5
     ),
-    exp: Number(
-      balanceConfig.boss?.partyBonus?.exp || 5
+
+    exp: getBossSetting(
+      balanceConfig.boss?.partyBonus?.exp,
+      5
     ),
   },
 };

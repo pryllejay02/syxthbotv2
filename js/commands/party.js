@@ -55,6 +55,10 @@ function getUniqueInviteIds(message, userId) {
   );
 }
 
+function getArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
 async function filterUsersWithoutActiveParty(userIds = []) {
   const valid = [];
   const alreadyBusy = [];
@@ -101,15 +105,67 @@ function isInPartyQueue(message, worldConfig) {
 }
 
 function getRemainingPartySlots(activeParty) {
-  const members = activeParty.members || [];
-  const invited = activeParty.invited || [];
-  const maxMembers = getMaxMembers();
+  const members = getArray(activeParty.members);
+  const invited = getArray(activeParty.invited);
+  const maxMembers = Number(activeParty.maxMembers || getMaxMembers());
 
   return Math.max(0, maxMembers - members.length - invited.length);
 }
 
 function getCreateInviteLimit() {
   return Math.max(0, getMaxMembers() - 1);
+}
+
+function appendSkippedInviteMessages(reply, data = {}) {
+  const {
+    rawInviteIds = [],
+    acceptedInviteIds = [],
+    invalidInvites = [],
+    alreadyBusy = [],
+  } = data;
+
+  let updatedReply = reply;
+
+  if (rawInviteIds.length > acceptedInviteIds.length) {
+    updatedReply += `\n\nℹ️ Invite list was limited to available party slots.`;
+  }
+
+  if (invalidInvites.length > 0) {
+    updatedReply +=
+      `\n⚠️ Skipped because of invalid world/character:\n` +
+      invalidInvites
+        .map((entry) => `• <@${entry.userId}> — ${entry.reason}`)
+        .join("\n");
+  }
+
+  if (alreadyBusy.length > 0) {
+    updatedReply +=
+      `\n⚠️ Skipped because already in or invited to another party:\n` +
+      alreadyBusy.map((id) => `• <@${id}>`).join("\n");
+  }
+
+  return updatedReply;
+}
+
+function formatPartyStatus(activeParty) {
+  const members = getArray(activeParty.members);
+  const invited = getArray(activeParty.invited);
+  const maxMembers = Number(activeParty.maxMembers || getMaxMembers());
+
+  return (
+    `👥 **Party Status**\n\n` +
+    `👑 Leader: <@${activeParty.leaderId}>\n` +
+    `🌍 World: **${activeParty.worldId}**\n` +
+    `👥 Members: **${members.length}/${maxMembers}**\n` +
+    `${formatMentions(members)}\n\n` +
+    `📨 Invited: ${formatMentions(invited)}\n` +
+    `📊 Status: **${activeParty.status || "ready"}**\n` +
+    `🔊 Voice: ${
+      activeParty.voiceChannelId
+        ? `<#${activeParty.voiceChannelId}>`
+        : "Not created yet"
+    }`
+  );
 }
 
 module.exports = async function partyCommand(message, args = []) {
@@ -145,7 +201,9 @@ module.exports = async function partyCommand(message, args = []) {
   }
 
   if (!worldConfig.partyQueueVoiceChannelId) {
-    return message.reply("❌ Party queue voice channel is missing in world config.");
+    return message.reply(
+      "❌ Party queue voice channel is missing in world config."
+    );
   }
 
   if (message.channel.id !== worldConfig.formPartyChannelId) {
@@ -188,10 +246,18 @@ module.exports = async function partyCommand(message, args = []) {
     const uniqueInvites = activeCheck.valid.slice(0, getCreateInviteLimit());
 
     if (uniqueInvites.length === 0) {
-      return message.reply(
+      let reply =
         "❌ No valid members to invite.\n\n" +
-          "Members must have a character, be in the same world, and not be in another active party."
-      );
+        "Members must have a character, be in the same world, and not be in another active party.";
+
+      reply = appendSkippedInviteMessages(reply, {
+        rawInviteIds,
+        acceptedInviteIds: uniqueInvites,
+        invalidInvites,
+        alreadyBusy: activeCheck.alreadyBusy,
+      });
+
+      return message.reply(reply);
     }
 
     const partyVoiceChannel = await createPartyVoiceChannel(
@@ -208,13 +274,19 @@ module.exports = async function partyCommand(message, args = []) {
 
     const partyRef = db.collection("parties").doc();
 
-    await createPartyDocument({
+    const createResult = await createPartyDocument({
       partyRef,
       worldId,
       leaderId: userId,
       invited: uniqueInvites,
       voiceChannelId: partyVoiceChannel.id,
     });
+
+    if (!createResult.ok) {
+      return message.reply(
+        `❌ Failed to create party: ${createResult.message || "Unknown error"}`
+      );
+    }
 
     let reply =
       `👥 **Party Created!**\n\n` +
@@ -225,19 +297,12 @@ module.exports = async function partyCommand(message, args = []) {
       `Invited members must join the **Party Queue Voice Channel** first, then type:\n` +
       `\`!s party accept\``;
 
-    if (rawInviteIds.length > uniqueInvites.length) {
-      reply += `\n\nℹ️ Invite list was limited to available party slots.`;
-    }
-
-    if (invalidInvites.length > 0) {
-      reply +=
-        `\n⚠️ Some mentioned users were skipped because they have no character or are in a different world.`;
-    }
-
-    if (activeCheck.alreadyBusy.length > 0) {
-      reply +=
-        `\n⚠️ Some mentioned users were skipped because they are already in or invited to another party.`;
-    }
+    reply = appendSkippedInviteMessages(reply, {
+      rawInviteIds,
+      acceptedInviteIds: uniqueInvites,
+      invalidInvites,
+      alreadyBusy: activeCheck.alreadyBusy,
+    });
 
     return message.reply(reply);
   }
@@ -249,7 +314,9 @@ module.exports = async function partyCommand(message, args = []) {
       return message.reply("❌ You don’t have any pending party invitation.");
     }
 
-    if (!(activeParty.invited || []).includes(userId)) {
+    const invited = getArray(activeParty.invited);
+
+    if (!invited.includes(userId)) {
       return message.reply("❌ You are not invited to this party.");
     }
 
@@ -265,9 +332,10 @@ module.exports = async function partyCommand(message, args = []) {
       );
     }
 
-    const currentMembers = activeParty.members || [];
+    const currentMembers = getArray(activeParty.members);
+    const maxMembers = Number(activeParty.maxMembers || getMaxMembers());
 
-    if (currentMembers.length >= getMaxMembers()) {
+    if (currentMembers.length >= maxMembers) {
       return message.reply("❌ This party is already full.");
     }
 
@@ -278,7 +346,9 @@ module.exports = async function partyCommand(message, args = []) {
     );
 
     if (!partyVoiceChannel) {
-      return message.reply("❌ Failed to find or create the party voice channel.");
+      return message.reply(
+        "❌ Failed to find or create the party voice channel."
+      );
     }
 
     const acceptResult = await acceptPartyInvite(
@@ -301,7 +371,7 @@ module.exports = async function partyCommand(message, args = []) {
 
     return message.reply(
       `✅ <@${userId}> joined the party!\n\n` +
-        `👥 Members: **${updatedMembers.length}/${getMaxMembers()}**\n` +
+        `👥 Members: **${updatedMembers.length}/${maxMembers}**\n` +
         `🔊 Voice: <#${partyVoiceChannel.id}>`
     );
   }
@@ -336,10 +406,18 @@ module.exports = async function partyCommand(message, args = []) {
     const limitedInvites = activeCheck.valid.slice(0, remainingSlots);
 
     if (limitedInvites.length === 0) {
-      return message.reply(
+      let reply =
         "❌ No valid members to invite.\n\n" +
-          "Members must have a character, be in the same world, and not be in another active party."
-      );
+        "Members must have a character, be in the same world, and not be in another active party.";
+
+      reply = appendSkippedInviteMessages(reply, {
+        rawInviteIds,
+        acceptedInviteIds: limitedInvites,
+        invalidInvites,
+        alreadyBusy: activeCheck.alreadyBusy,
+      });
+
+      return message.reply(reply);
     }
 
     const inviteResult = await addInvitesToParty(
@@ -356,19 +434,12 @@ module.exports = async function partyCommand(message, args = []) {
       `They must join the **Party Queue Voice Channel** and type:\n` +
       `\`!s party accept\``;
 
-    if (rawInviteIds.length > limitedInvites.length) {
-      reply += `\n\nℹ️ Invite list was limited to available party slots.`;
-    }
-
-    if (invalidInvites.length > 0) {
-      reply +=
-        `\n⚠️ Some mentioned users were skipped because they have no character or are in a different world.`;
-    }
-
-    if (activeCheck.alreadyBusy.length > 0) {
-      reply +=
-        `\n⚠️ Some mentioned users were skipped because they are already in or invited to another party.`;
-    }
+    reply = appendSkippedInviteMessages(reply, {
+      rawInviteIds,
+      acceptedInviteIds: limitedInvites,
+      invalidInvites,
+      alreadyBusy: activeCheck.alreadyBusy,
+    });
 
     return message.reply(reply);
   }
@@ -380,23 +451,7 @@ module.exports = async function partyCommand(message, args = []) {
       return message.reply("❌ You are not in a party.");
     }
 
-    const members = activeParty.members || [];
-    const invited = activeParty.invited || [];
-
-    return message.reply(
-      `👥 **Party Status**\n\n` +
-        `👑 Leader: <@${activeParty.leaderId}>\n` +
-        `🌍 World: **${activeParty.worldId}**\n` +
-        `👥 Members: **${members.length}/${getMaxMembers()}**\n` +
-        `${formatMentions(members)}\n\n` +
-        `📨 Invited: ${formatMentions(invited)}\n` +
-        `📊 Status: **${activeParty.status || "ready"}**\n` +
-        `🔊 Voice: ${
-          activeParty.voiceChannelId
-            ? `<#${activeParty.voiceChannelId}>`
-            : "Not created yet"
-        }`
-    );
+    return message.reply(formatPartyStatus(activeParty));
   }
 
   if (subCommand === "leave") {

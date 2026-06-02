@@ -9,8 +9,29 @@ const MAX_ADMIN_ITEM_QUANTITY = Number(
   balanceConfig.adminItem?.maxQuantity || 50
 );
 
+const DEFAULT_ADMIN_PERCENT_CAPS = {
+  Common: {
+    dodge: 4,
+    crit: 5,
+  },
+
+  Rare: {
+    dodge: 6,
+    crit: 8,
+  },
+
+  Legendary: {
+    dodge: 9,
+    crit: 12,
+  },
+};
+
 function getMention(message) {
   return message.mentions.users.first();
+}
+
+function normalizeId(value) {
+  return String(value || "").toLowerCase().trim();
 }
 
 function randomBetween(min, max) {
@@ -24,41 +45,6 @@ function randomBetween(min, max) {
   if (safeMax <= safeMin) return safeMin;
 
   return Math.random() * (safeMax - safeMin) + safeMin;
-}
-
-function scaleStatsByQuality(stats = {}, quality = "Common") {
-  const rollConfig =
-    balanceConfig.adminItem?.statRolls?.[quality] ||
-    balanceConfig.adminItem?.statRolls?.Common ||
-    {
-      min: 1,
-      max: 1.1,
-    };
-
-  const multiplier = randomBetween(
-    Number(rollConfig.min || 1),
-    Number(rollConfig.max || 1)
-  );
-
-  return {
-    attack: Math.floor(Number(stats.attack || 0) * multiplier),
-    defense: Math.floor(Number(stats.defense || 0) * multiplier),
-    maxHp: Math.floor(Number(stats.maxHp || 0) * multiplier),
-    dodge: Number((Number(stats.dodge || 0) * multiplier).toFixed(1)),
-    crit: Number((Number(stats.crit || 0) * multiplier).toFixed(1)),
-  };
-}
-
-function makeDescription(stats = {}) {
-  const parts = [];
-
-  if (stats.attack) parts.push(`+${stats.attack} ATK`);
-  if (stats.defense) parts.push(`+${stats.defense} DEF`);
-  if (stats.maxHp) parts.push(`+${stats.maxHp} HP`);
-  if (stats.dodge) parts.push(`+${stats.dodge}% Dodge`);
-  if (stats.crit) parts.push(`+${stats.crit}% Crit`);
-
-  return parts.length ? parts.join(", ") : "No bonus stats";
 }
 
 function normalizeQuality(input, allowedQualities) {
@@ -78,8 +64,150 @@ function parseQuantity(value) {
   return quantity;
 }
 
+function isConsumable(item = {}) {
+  return String(item.type || "").toLowerCase() === "consumable";
+}
+
+function getDefaultStats() {
+  return {
+    attack: 0,
+    defense: 0,
+    maxHp: 0,
+    dodge: 0,
+    crit: 0,
+  };
+}
+
+function getRollConfigByQuality(quality = "Common") {
+  return (
+    balanceConfig.adminItem?.statRolls?.[quality] ||
+    balanceConfig.adminItem?.statRolls?.Common ||
+    {
+      min: 1,
+      max: 1.1,
+    }
+  );
+}
+
+function getConfiguredPercentCap(statName, quality = "Common") {
+  const adminCap = Number(
+    balanceConfig.adminItem?.statCaps?.[quality]?.[statName] || 0
+  );
+
+  if (adminCap > 0) return adminCap;
+
+  if (quality === "Common") {
+    const shopCap = Number(balanceConfig.item?.statCaps?.[statName] || 0);
+
+    if (shopCap > 0) return shopCap;
+  }
+
+  if (quality === "Rare") {
+    const rareDropCap = Number(
+      balanceConfig.monsterDrop?.statCaps?.Rare?.[statName] || 0
+    );
+
+    if (rareDropCap > 0) return rareDropCap;
+  }
+
+  if (quality === "Legendary") {
+    const legendaryDropCap = Number(
+      balanceConfig.bossDrop?.statCaps?.Legendary?.[statName] || 0
+    );
+
+    if (legendaryDropCap > 0) return legendaryDropCap;
+  }
+
+  return Number(DEFAULT_ADMIN_PERCENT_CAPS[quality]?.[statName] || 0);
+}
+
+function capPercentStat(statName, value, quality = "Common") {
+  const statValue = Number(value || 0);
+  const cap = getConfiguredPercentCap(statName, quality);
+
+  if (cap > 0) {
+    return Math.min(statValue, cap);
+  }
+
+  if (typeof balanceConfig.capItemPercentStat === "function") {
+    return balanceConfig.capItemPercentStat(
+      statName,
+      statValue,
+      quality,
+      "admin_generated"
+    );
+  }
+
+  return statValue;
+}
+
+function scaleStatsByQuality(stats = {}, quality = "Common") {
+  const rollConfig = getRollConfigByQuality(quality);
+
+  const multiplier = randomBetween(
+    Number(rollConfig.min || 1),
+    Number(rollConfig.max || 1)
+  );
+
+  const attack = Math.floor(Number(stats.attack || 0) * multiplier);
+  const defense = Math.floor(Number(stats.defense || 0) * multiplier);
+  const maxHp = Math.floor(Number(stats.maxHp || 0) * multiplier);
+
+  const dodge = capPercentStat(
+    "dodge",
+    Number((Number(stats.dodge || 0) * multiplier).toFixed(1)),
+    quality
+  );
+
+  const crit = capPercentStat(
+    "crit",
+    Number((Number(stats.crit || 0) * multiplier).toFixed(1)),
+    quality
+  );
+
+  return {
+    attack,
+    defense,
+    maxHp,
+    dodge,
+    crit,
+  };
+}
+
+function makeDescription(stats = {}) {
+  const parts = [];
+
+  if (stats.attack) parts.push(`+${stats.attack} ATK`);
+  if (stats.defense) parts.push(`+${stats.defense} DEF`);
+  if (stats.maxHp) parts.push(`+${stats.maxHp} HP`);
+  if (stats.dodge) parts.push(`+${stats.dodge}% Dodge`);
+  if (stats.crit) parts.push(`+${stats.crit}% Crit`);
+
+  return parts.length ? parts.join(", ") : "No bonus stats";
+}
+
 function getQualityPriceMultiplier(quality = "Common") {
-  return Number(balanceConfig.quality?.[quality]?.priceMultiplier || 1);
+  if (quality === "Rare") {
+    return Number(
+      balanceConfig.adminItem?.priceMultiplier?.Rare ||
+        balanceConfig.quality?.Rare?.priceMultiplier ||
+        2
+    );
+  }
+
+  if (quality === "Legendary") {
+    return Number(
+      balanceConfig.adminItem?.priceMultiplier?.Legendary ||
+        balanceConfig.quality?.Legendary?.priceMultiplier ||
+        5
+    );
+  }
+
+  return Number(
+    balanceConfig.adminItem?.priceMultiplier?.Common ||
+      balanceConfig.quality?.Common?.priceMultiplier ||
+      1
+  );
 }
 
 function cleanItemName(name = "Unknown Item", quality = "Common") {
@@ -91,26 +219,27 @@ function cleanItemName(name = "Unknown Item", quality = "Common") {
   return `${quality} ${cleanBaseName}`;
 }
 
-function generateAdminItem(baseItem, quality) {
-  const isConsumable =
-    String(baseItem.type || "").toLowerCase() === "consumable";
+function findShopItemById(itemId) {
+  const targetId = normalizeId(itemId);
 
-  const stats = isConsumable
-    ? baseItem.stats || {
-        attack: 0,
-        defense: 0,
-        maxHp: 0,
-        dodge: 0,
-        crit: 0,
-      }
-    : scaleStatsByQuality(baseItem.stats || {}, quality);
+  return shopItems.find(
+    (shopItem) => shopItem.id && normalizeId(shopItem.id) === targetId
+  );
+}
+
+function generateAdminItem(baseItem, quality) {
+  const consumable = isConsumable(baseItem);
+
+  const stats = consumable
+    ? baseItem.stats || getDefaultStats()
+    : scaleStatsByQuality(baseItem.stats || getDefaultStats(), quality);
 
   const qualityEmoji = getQualityEmoji(quality);
 
   return {
     ...baseItem,
 
-    id: isConsumable
+    id: consumable
       ? baseItem.id
       : `${baseItem.id}_${quality.toLowerCase()}_admin_${Date.now()}_${Math.floor(
           Math.random() * 99999
@@ -118,7 +247,7 @@ function generateAdminItem(baseItem, quality) {
 
     baseItemId: baseItem.baseItemId || baseItem.id,
 
-    name: isConsumable
+    name: consumable
       ? baseItem.name
       : cleanItemName(baseItem.name, quality),
 
@@ -132,7 +261,7 @@ function generateAdminItem(baseItem, quality) {
       Number(baseItem.price || 0) * getQualityPriceMultiplier(quality)
     ),
 
-    description: isConsumable
+    description: consumable
       ? baseItem.description || "Consumable item."
       : makeDescription(stats),
 
@@ -142,18 +271,17 @@ function generateAdminItem(baseItem, quality) {
     healAmount: Number(baseItem.healAmount || baseItem.heal || 0),
 
     quantity: 1,
-    source: isConsumable ? "admin_consumable" : "admin_generated",
+    source: consumable ? "admin_consumable" : "admin_generated",
     emoji: baseItem.emoji || "📦",
   };
 }
 
 function addItemToInventory(inventory = [], item, quantity = 1) {
-  const isConsumable =
-    String(item.type || "").toLowerCase() === "consumable";
+  const consumable = isConsumable(item);
 
   const existingIndex = inventory.findIndex((invItem) => {
-    if (isConsumable) {
-      return invItem.id === item.id;
+    if (consumable) {
+      return normalizeId(invItem.id) === normalizeId(item.id);
     }
 
     return (
@@ -238,11 +366,7 @@ module.exports = async function adminItems(message, args = []) {
       );
     }
 
-    const baseItem = shopItems.find(
-      (shopItem) =>
-        shopItem.id &&
-        shopItem.id.toLowerCase() === String(itemId).toLowerCase()
-    );
+    const baseItem = findShopItemById(itemId);
 
     if (!baseItem) {
       return message.reply("❌ Item not found in shopItems.");

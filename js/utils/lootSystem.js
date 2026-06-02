@@ -3,16 +3,16 @@ const { getQualityEmoji } = require("./qualitySystem");
 const balanceConfig = require("../data/balanceConfig");
 
 const DROP_RATES = balanceConfig.monsterDrop?.rates || {
-  rare: 10,
-  common: 35,
-  none: 55,
+  rare: 8,
+  common: 32,
+  none: 60,
 };
 
 function rollDropQuality() {
   const chance = Math.random() * 100;
 
-  const rareRate = Number(DROP_RATES.rare || 0);
-  const commonRate = Number(DROP_RATES.common || 0);
+  const rareRate = Math.max(0, Number(DROP_RATES.rare || 0));
+  const commonRate = Math.max(0, Number(DROP_RATES.common || 0));
 
   if (chance < rareRate) {
     return "Rare";
@@ -26,14 +26,26 @@ function rollDropQuality() {
 }
 
 function getNearestItemLevel(monsterLevel) {
+  if (typeof balanceConfig.getNearestItemLevel === "function") {
+    return balanceConfig.getNearestItemLevel(monsterLevel);
+  }
+
   const level = Number(monsterLevel || 1);
-  const itemLevels = balanceConfig.item?.levels || balanceConfig.ITEM_LEVELS || [];
+
+  const itemLevels =
+    balanceConfig.item?.levels ||
+    balanceConfig.ITEM_LEVELS ||
+    [];
 
   if (!itemLevels.length) return level;
 
-  let nearest = Number(itemLevels[0][0] || 1);
+  let nearest = Array.isArray(itemLevels[0])
+    ? Number(itemLevels[0][0] || 1)
+    : Number(itemLevels[0] || 1);
 
-  for (const [itemLevel] of itemLevels) {
+  for (const entry of itemLevels) {
+    const itemLevel = Array.isArray(entry) ? entry[0] : entry;
+
     if (Number(itemLevel) <= level) {
       nearest = Number(itemLevel);
     }
@@ -42,27 +54,79 @@ function getNearestItemLevel(monsterLevel) {
   return nearest;
 }
 
-function scaleStatsByQuality(stats = {}, quality = "Common") {
+function getRollMultiplier(quality = "Common") {
   const rollConfig =
     balanceConfig.monsterDrop?.statRolls?.[quality] ||
     balanceConfig.monsterDrop?.statRolls?.Common ||
     {
       min: 1,
-      max: 1.1,
+      max: 1.05,
     };
 
-  const multiplier =
-    typeof balanceConfig.randomBetween === "function"
-      ? balanceConfig.randomBetween(rollConfig.min, rollConfig.max)
-      : Math.random() * (Number(rollConfig.max || 1) - Number(rollConfig.min || 1)) +
-        Number(rollConfig.min || 1);
+  const min = Number(rollConfig.min || 1);
+  const max = Number(rollConfig.max || min);
+
+  if (typeof balanceConfig.randomBetween === "function") {
+    return balanceConfig.randomBetween(min, max);
+  }
+
+  if (max <= min) return min;
+
+  return Math.random() * (max - min) + min;
+}
+
+function capPercentStat(statName, value, quality = "Common") {
+  const statValue = Number(value || 0);
+
+  if (typeof balanceConfig.capItemPercentStat === "function") {
+    return balanceConfig.capItemPercentStat(
+      statName,
+      statValue,
+      quality,
+      "monster_drop"
+    );
+  }
+
+  const monsterCap = Number(
+    balanceConfig.monsterDrop?.statCaps?.[quality]?.[statName] || 0
+  );
+
+  const shopCap = Number(
+    balanceConfig.item?.statCaps?.[statName] || 0
+  );
+
+  const cap = monsterCap || shopCap;
+
+  if (!cap) return statValue;
+
+  return Math.min(statValue, cap);
+}
+
+function scaleStatsByQuality(stats = {}, quality = "Common") {
+  const multiplier = getRollMultiplier(quality);
+
+  const attack = Math.floor(Number(stats.attack || 0) * multiplier);
+  const defense = Math.floor(Number(stats.defense || 0) * multiplier);
+  const maxHp = Math.floor(Number(stats.maxHp || 0) * multiplier);
+
+  const dodge = capPercentStat(
+    "dodge",
+    Number((Number(stats.dodge || 0) * multiplier).toFixed(1)),
+    quality
+  );
+
+  const crit = capPercentStat(
+    "crit",
+    Number((Number(stats.crit || 0) * multiplier).toFixed(1)),
+    quality
+  );
 
   return {
-    attack: Math.floor(Number(stats.attack || 0) * multiplier),
-    defense: Math.floor(Number(stats.defense || 0) * multiplier),
-    maxHp: Math.floor(Number(stats.maxHp || 0) * multiplier),
-    dodge: Number((Number(stats.dodge || 0) * multiplier).toFixed(1)),
-    crit: Number((Number(stats.crit || 0) * multiplier).toFixed(1)),
+    attack,
+    defense,
+    maxHp,
+    dodge,
+    crit,
   };
 }
 
@@ -85,9 +149,22 @@ function getPriceMultiplier(quality = "Common") {
 }
 
 function cleanItemName(name, quality) {
-  const baseName = String(name || "Unknown Item").replace(/^Common /, "");
+  const baseName = String(name || "Unknown Item").replace(
+    /^(Common|Rare|Legendary|Starter)\s+/i,
+    ""
+  );
 
   return `${quality} ${baseName}`;
+}
+
+function getPossibleDropItems(itemLevel) {
+  return shopItems.filter((item) => {
+    const type = String(item.type || "").toLowerCase();
+
+    if (type === "consumable") return false;
+
+    return Number(item.requiredLevel || 1) === Number(itemLevel || 1);
+  });
 }
 
 function generateMonsterDrop(monsterLevel) {
@@ -105,12 +182,7 @@ function generateMonsterDrop(monsterLevel) {
   }
 
   const itemLevel = getNearestItemLevel(level);
-
-  const possibleItems = shopItems.filter(
-    (item) =>
-      String(item.type || "").toLowerCase() !== "consumable" &&
-      Number(item.requiredLevel || 1) === itemLevel
-  );
+  const possibleItems = getPossibleDropItems(itemLevel);
 
   if (possibleItems.length === 0) {
     return null;
@@ -151,8 +223,36 @@ function generateMonsterDrop(monsterLevel) {
   };
 }
 
+function addItemToInventory(inventory = [], droppedItem) {
+  if (!droppedItem) return inventory;
+
+  const existingItemIndex = inventory.findIndex(
+    (item) =>
+      item.baseItemId === droppedItem.baseItemId &&
+      item.quality === droppedItem.quality &&
+      item.source === droppedItem.source &&
+      JSON.stringify(item.stats || {}) ===
+        JSON.stringify(droppedItem.stats || {})
+  );
+
+  if (existingItemIndex !== -1) {
+    inventory[existingItemIndex].quantity =
+      Number(inventory[existingItemIndex].quantity || 1) + 1;
+  } else {
+    inventory.push({
+      ...droppedItem,
+      quantity: 1,
+    });
+  }
+
+  return inventory;
+}
+
 module.exports = {
   DROP_RATES,
   rollDropQuality,
+  getNearestItemLevel,
+  scaleStatsByQuality,
   generateMonsterDrop,
+  addItemToInventory,
 };

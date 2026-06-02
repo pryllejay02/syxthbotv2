@@ -39,6 +39,31 @@ function getRandomMonster(playerLevel) {
   ];
 }
 
+function getBalancedMonsterStats(monster = {}) {
+  if (typeof balanceConfig.getBalancedMonsterStats === "function") {
+    return balanceConfig.getBalancedMonsterStats(monster);
+  }
+
+  return {
+    hp: Number(monster.hp || 1),
+    attack: Number(monster.attack || 1),
+    defense: Number(monster.defense || 0),
+    dodge: Number(monster.dodge || 0),
+    crit: Number(monster.crit || 0),
+  };
+}
+
+function getMonsterReward(monster = {}) {
+  if (typeof balanceConfig.getMonsterReward === "function") {
+    return balanceConfig.getMonsterReward(monster);
+  }
+
+  return {
+    exp: Number(monster.exp || 1),
+    gold: Number(monster.gold || 0),
+  };
+}
+
 module.exports = async function huntCommand(message) {
   const userId = message.author.id;
 
@@ -79,12 +104,11 @@ module.exports = async function huntCommand(message) {
 
     const monster = getRandomMonster(Number(player.level || 1));
 
+    const balancedStats = getBalancedMonsterStats(monster);
+
     // Reward is saved here but hidden from the hunt message.
     // It will only be shown after the monster is defeated in hit.js.
-    const reward = balanceConfig.getMonsterReward(monster);
-
-    const monsterDodge = Number(monster.dodge || 0);
-    const monsterCrit = Number(monster.crit || 0);
+    const reward = getMonsterReward(monster);
 
     const battleData = {
       userId,
@@ -92,14 +116,14 @@ module.exports = async function huntCommand(message) {
       monsterName: monster.name,
       monsterLevel: Number(monster.level || 1),
 
-      monsterHp: Number(monster.hp || 1),
-      monsterMaxHp: Number(monster.hp || 1),
+      monsterHp: Number(balancedStats.hp || 1),
+      monsterMaxHp: Number(balancedStats.hp || 1),
 
-      monsterAttack: Number(monster.attack || 1),
-      monsterDefense: Number(monster.defense || 0),
+      monsterAttack: Number(balancedStats.attack || 1),
+      monsterDefense: Number(balancedStats.defense || 0),
 
-      monsterCrit,
-      monsterDodge,
+      monsterCrit: Number(balancedStats.crit || 0),
+      monsterDodge: Number(balancedStats.dodge || 0),
 
       // Hidden reward data.
       monsterExp: Number(reward.exp || 1),
@@ -114,8 +138,7 @@ module.exports = async function huntCommand(message) {
     return {
       ok: true,
       monster,
-      monsterDodge,
-      monsterCrit,
+      battleData,
     };
   });
 
@@ -123,17 +146,16 @@ module.exports = async function huntCommand(message) {
     return message.reply(result.message || "❌ Hunt failed.");
   }
 
-  const { monster, monsterDodge, monsterCrit } = result;
+  const { monster, battleData } = result;
 
   const content =
     `🌑 A wild **${monster.name}** appeared!\n\n` +
-    `👹 Monster Lv.${monster.level}\n` +
-    `❤️ HP: ${monster.hp}/${monster.hp}\n` +
-    `⚔️ Attack: ${monster.attack}\n` +
-    `🛡️ Defense: ${monster.defense}\n` +
-    `💨 Dodge: ${monsterDodge}%\n` +
-    `💥 Crit: ${monsterCrit}%\n\n` +
-    `🎁 Reward: **Hidden until defeated**\n\n` +
+    `👹 Monster Lv.${battleData.monsterLevel}\n` +
+    `❤️ HP: ${battleData.monsterHp}/${battleData.monsterMaxHp}\n` +
+    `⚔️ Attack: ${battleData.monsterAttack}\n` +
+    `🛡️ Defense: ${battleData.monsterDefense}\n` +
+    `💨 Dodge: ${battleData.monsterDodge}%\n` +
+    `💥 Crit: ${battleData.monsterCrit}%\n\n` +
     `Use \`!s hit\` to attack or \`!s retreat\` to escape.`;
 
   if (monster.image) {

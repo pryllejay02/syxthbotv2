@@ -9,6 +9,7 @@ const adminPlayer = require("../admin/adminPlayer");
 const adminBoss = require("../admin/adminBoss");
 const adminReset = require("../admin/adminReset");
 const adminRoom = require("../admin/adminRoom");
+const adminMaintenance = require("../admin/adminMaintenance");
 
 module.exports = async function adminCommand(message, args = []) {
   if (!isAdmin(message.member)) {
@@ -38,10 +39,13 @@ module.exports = async function adminCommand(message, args = []) {
       "heal",
       "revive",
       "inventory",
-      "repairplayer",
     ].includes(subCommand)
   ) {
     return adminPlayer(message, args);
+  }
+
+  if (["repairplayer"].includes(subCommand)) {
+    return adminMaintenance(message, args);
   }
 
   if (["summonboss", "removeboss"].includes(subCommand)) {
@@ -53,9 +57,12 @@ module.exports = async function adminCommand(message, args = []) {
   }
 
   if (
-    ["resettrade", "resetparty", "resetbattle", "resetall"].includes(
-      subCommand
-    )
+    [
+      "resettrade",
+      "resetparty",
+      "resetbattle",
+      "resetall",
+    ].includes(subCommand)
   ) {
     return adminReset(message, args);
   }

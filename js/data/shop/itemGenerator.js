@@ -24,8 +24,8 @@ function makeDescription(stats = {}) {
   return parts.length ? parts.join(", ") : "No bonus stats";
 }
 
-// Flat stats scale strongly by tier.
-// Used for ATK, DEF, and HP.
+// Flat stats scale by tier.
+// Used for ATK, DEF, and HP only.
 function getFlatScale(tierIndex) {
   if (typeof balanceConfig.getItemScaleByTierIndex === "function") {
     return balanceConfig.getItemScaleByTierIndex(tierIndex);
@@ -35,7 +35,7 @@ function getFlatScale(tierIndex) {
     (
       1 +
       Number(tierIndex || 0) *
-        Number(balanceConfig.item?.scalePerTier || 0.85)
+        Number(balanceConfig.item?.scalePerTier || 0.45)
     ).toFixed(2)
   );
 }
@@ -43,23 +43,37 @@ function getFlatScale(tierIndex) {
 // Percentage stats scale slowly by tier.
 // Used for Dodge and Crit only.
 function getPercentScale(tierIndex) {
+  if (typeof balanceConfig.getItemPercentScaleByTierIndex === "function") {
+    return balanceConfig.getItemPercentScaleByTierIndex(tierIndex);
+  }
+
   return Number(
     (
       1 +
       Number(tierIndex || 0) *
-        Number(balanceConfig.item?.percentScalePerTier || 0.08)
+        Number(balanceConfig.item?.percentScalePerTier || 0.04)
     ).toFixed(2)
   );
 }
 
-// Per-item cap for Common shop item Dodge/Crit.
+// Per-item cap for Dodge/Crit.
 // This prevents shop items from creating extreme dodge/crit values.
 function capPercentStat(statName, value) {
+  if (typeof balanceConfig.capItemPercentStat === "function") {
+    return balanceConfig.capItemPercentStat(
+      statName,
+      value,
+      SHOP_QUALITY,
+      "shop"
+    );
+  }
+
   const cap = Number(balanceConfig.item?.statCaps?.[statName] || 0);
+  const statValue = Number(value || 0);
 
-  if (!cap) return value;
+  if (!cap) return statValue;
 
-  return Math.min(value, cap);
+  return Math.min(statValue, cap);
 }
 
 function makeStats(baseStats = {}, tierIndex = 0) {
@@ -87,6 +101,25 @@ function makeStats(baseStats = {}, tierIndex = 0) {
     dodge,
     crit,
   };
+}
+
+function getShopItemPrice(type, level, tierIndex) {
+  if (typeof balanceConfig.getShopItemPrice === "function") {
+    return balanceConfig.getShopItemPrice(type, level, tierIndex);
+  }
+
+  const isWeapon = String(type || "").toLowerCase() === "weapon";
+  const priceConfig = balanceConfig.item?.price || {};
+
+  const base = isWeapon
+    ? Number(priceConfig.weaponBase || 120)
+    : Number(priceConfig.gearBase || 150);
+
+  return Math.floor(
+    base +
+      Number(level || 1) * Number(priceConfig.levelMultiplier || 35) +
+      (Number(tierIndex || 0) + 1) * Number(priceConfig.tierMultiplier || 80)
+  );
 }
 
 function buildShopItem({
@@ -150,7 +183,7 @@ function generateClassItems(config = {}) {
         quality: SHOP_QUALITY,
         requiredLevel: level,
         compatibleClasses: [config.classId],
-        price: balanceConfig.getShopItemPrice("Weapon", level, index),
+        price: getShopItemPrice("Weapon", level, index),
         description: makeDescription(weaponStats),
         stats: weaponStats,
         emoji: config.weapon.emoji,
@@ -168,7 +201,7 @@ function generateClassItems(config = {}) {
           quality: SHOP_QUALITY,
           requiredLevel: level,
           compatibleClasses: [config.classId],
-          price: balanceConfig.getShopItemPrice(gear.type, level, index),
+          price: getShopItemPrice(gear.type, level, index),
           description: makeDescription(gearStats),
           stats: gearStats,
           emoji: gear.emoji,

@@ -2,7 +2,9 @@ const { db } = require("../../firebase/firebase");
 const { applyLevelUp, MAX_LEVEL } = require("../utils/levelSystem");
 const { calculateTotalStats } = require("../utils/statSystem");
 const { generateMonsterDrop } = require("../utils/lootSystem");
+const { getQualityEmoji } = require("../utils/qualitySystem");
 const balanceConfig = require("../data/balanceConfig");
+const shopItems = require("../data/shopItems");
 
 function getNormalReviveSeconds() {
   return Number(balanceConfig.revive?.normalSeconds || 60);
@@ -27,6 +29,393 @@ function getNormalReviveHp(maxHp) {
   );
 }
 
+function getDefaultStats() {
+  return {
+    attack: 0,
+    defense: 0,
+    maxHp: 0,
+    dodge: 0,
+    crit: 0,
+  };
+}
+
+function getDefaultEquipment() {
+  return {
+    weapon: null,
+    helmet: null,
+    armor: null,
+    gloves: null,
+    pants: null,
+    boots: null,
+  };
+}
+
+function normalizeId(value) {
+  return String(value || "").toLowerCase().trim();
+}
+
+function getQuality(item = {}) {
+  const quality = String(item.quality || "Common");
+
+  if (["Starter", "Common", "Rare", "Legendary"].includes(quality)) {
+    return quality;
+  }
+
+  return "Common";
+}
+
+function getSource(item = {}) {
+  return String(item.source || "shop").toLowerCase();
+}
+
+function isStarterItem(item = {}) {
+  return (
+    item.quality === "Starter" ||
+    item.source === "starter" ||
+    item.isStarter === true
+  );
+}
+
+function isConsumable(item = {}) {
+  return String(item.type || "").toLowerCase() === "consumable";
+}
+
+function findBaseShopItem(item = {}) {
+  const candidateIds = [item.baseItemId, item.id]
+    .filter(Boolean)
+    .map(normalizeId);
+
+  for (const candidateId of candidateIds) {
+    const exactMatch = shopItems.find(
+      (shopItem) => normalizeId(shopItem.id) === candidateId
+    );
+
+    if (exactMatch) return exactMatch;
+  }
+
+  const itemId = normalizeId(item.id);
+
+  if (!itemId) return null;
+
+  const prefixMatches = shopItems
+    .filter((shopItem) => itemId.startsWith(normalizeId(shopItem.id)))
+    .sort((a, b) => normalizeId(b.id).length - normalizeId(a.id).length);
+
+  return prefixMatches[0] || null;
+}
+
+function getRollConfigBySource(item = {}, quality = "Common") {
+  const source = getSource(item);
+
+  if (source === "boss_raid") {
+    return balanceConfig.bossDrop?.statRolls?.[quality] || null;
+  }
+
+  if (source === "monster_drop") {
+    return balanceConfig.monsterDrop?.statRolls?.[quality] || null;
+  }
+
+  if (source === "admin_generated" || source === "admin") {
+    return balanceConfig.adminItem?.statRolls?.[quality] || null;
+  }
+
+  return null;
+}
+
+function getDeterministicMultiplier(item = {}, quality = "Common") {
+  if (quality === "Starter") return 0;
+
+  const source = getSource(item);
+
+  if (!source || source === "shop") {
+    return Number(balanceConfig.quality?.[quality]?.statMultiplier || 1);
+  }
+
+  const rollConfig = getRollConfigBySource(item, quality);
+
+  if (rollConfig) {
+    const min = Number(rollConfig.min || 1);
+    const max = Number(rollConfig.max || min);
+
+    return Number(((min + max) / 2).toFixed(3));
+  }
+
+  return Number(balanceConfig.quality?.[quality]?.statMultiplier || 1);
+}
+
+function getPriceMultiplierBySource(item = {}, quality = "Common") {
+  const source = getSource(item);
+
+  if (source === "boss_raid") {
+    return Number(balanceConfig.bossDrop?.priceMultiplier?.[quality] || 1);
+  }
+
+  if (source === "monster_drop") {
+    return Number(balanceConfig.monsterDrop?.priceMultiplier?.[quality] || 1);
+  }
+
+  if (source === "admin_generated" || source === "admin") {
+    return Number(
+      balanceConfig.adminItem?.priceMultiplier?.[quality] ||
+        balanceConfig.quality?.[quality]?.priceMultiplier ||
+        1
+    );
+  }
+
+  return Number(balanceConfig.quality?.[quality]?.priceMultiplier || 1);
+}
+
+function capPercentStat(statName, value, quality = "Common", source = "shop") {
+  const statValue = Number(value || 0);
+
+  if (typeof balanceConfig.capItemPercentStat === "function") {
+    return balanceConfig.capItemPercentStat(
+      statName,
+      statValue,
+      quality,
+      source
+    );
+  }
+
+  let cap = Number(balanceConfig.item?.statCaps?.[statName] || 0);
+
+  if (source === "monster_drop") {
+    cap = Number(
+      balanceConfig.monsterDrop?.statCaps?.[quality]?.[statName] || cap
+    );
+  }
+
+  if (source === "boss_raid") {
+    cap = Number(
+      balanceConfig.bossDrop?.statCaps?.[quality]?.[statName] || cap
+    );
+  }
+
+  if (source === "admin_generated" || source === "admin") {
+    if (quality === "Rare") {
+      cap = Number(
+        balanceConfig.monsterDrop?.statCaps?.Rare?.[statName] || cap
+      );
+    }
+
+    if (quality === "Legendary") {
+      cap = Number(
+        balanceConfig.bossDrop?.statCaps?.Legendary?.[statName] || cap
+      );
+    }
+  }
+
+  if (!cap) return statValue;
+
+  return Math.min(statValue, cap);
+}
+
+function scaleStats(
+  stats = {},
+  multiplier = 1,
+  quality = "Common",
+  source = "shop"
+) {
+  const attack = Math.floor(Number(stats.attack || 0) * multiplier);
+  const defense = Math.floor(Number(stats.defense || 0) * multiplier);
+  const maxHp = Math.floor(Number(stats.maxHp || 0) * multiplier);
+
+  const dodge = capPercentStat(
+    "dodge",
+    Number((Number(stats.dodge || 0) * multiplier).toFixed(1)),
+    quality,
+    source
+  );
+
+  const crit = capPercentStat(
+    "crit",
+    Number((Number(stats.crit || 0) * multiplier).toFixed(1)),
+    quality,
+    source
+  );
+
+  return {
+    attack,
+    defense,
+    maxHp,
+    dodge,
+    crit,
+  };
+}
+
+function normalizeFallbackStats(item = {}) {
+  const quality = getQuality(item);
+  const source = getSource(item);
+
+  return {
+    attack: Math.floor(Number(item.stats?.attack || 0)),
+    defense: Math.floor(Number(item.stats?.defense || 0)),
+    maxHp: Math.floor(Number(item.stats?.maxHp || 0)),
+    dodge: capPercentStat(
+      "dodge",
+      Number(item.stats?.dodge || 0),
+      quality,
+      source
+    ),
+    crit: capPercentStat(
+      "crit",
+      Number(item.stats?.crit || 0),
+      quality,
+      source
+    ),
+  };
+}
+
+function getCleanItemName(baseName = "Unknown Item", quality = "Common") {
+  const cleanBaseName = String(baseName || "Unknown Item").replace(
+    /^(Common|Rare|Legendary|Starter)\s+/i,
+    ""
+  );
+
+  if (quality === "Starter") {
+    return cleanBaseName;
+  }
+
+  return `${quality} ${cleanBaseName}`;
+}
+
+function makeDescription(stats = {}) {
+  const parts = [];
+
+  if (stats.attack) parts.push(`+${stats.attack} ATK`);
+  if (stats.defense) parts.push(`+${stats.defense} DEF`);
+  if (stats.maxHp) parts.push(`+${stats.maxHp} HP`);
+  if (stats.dodge) parts.push(`+${stats.dodge}% Dodge`);
+  if (stats.crit) parts.push(`+${stats.crit}% Crit`);
+
+  return parts.length ? parts.join(", ") : "No bonus stats";
+}
+
+function rebalanceItemStats(item = {}) {
+  if (!item) return null;
+
+  const quality = getQuality(item);
+  const source = getSource(item);
+
+  if (isStarterItem(item)) {
+    return {
+      ...item,
+      quality: "Starter",
+      qualityEmoji: "🌱",
+      price: 0,
+      source: "starter",
+      isStarter: true,
+      quantity: Math.max(1, Number(item.quantity || 1)),
+      stats: getDefaultStats(),
+      description: item.description || "Starter weapon.",
+    };
+  }
+
+  if (isConsumable(item)) {
+    return {
+      ...item,
+      quality,
+      qualityEmoji: item.qualityEmoji || getQualityEmoji(quality),
+      quantity: Math.max(1, Number(item.quantity || 1)),
+      stats: item.stats || getDefaultStats(),
+      healPercent: Number(item.healPercent || 0),
+      healAmount: Number(item.healAmount || item.heal || 0),
+    };
+  }
+
+  const baseItem = findBaseShopItem(item);
+
+  if (!baseItem) {
+    const fallbackStats = normalizeFallbackStats(item);
+
+    return {
+      ...item,
+      quality,
+      qualityEmoji: item.qualityEmoji || getQualityEmoji(quality),
+      quantity: Math.max(1, Number(item.quantity || 1)),
+      stats: fallbackStats,
+      description: makeDescription(fallbackStats),
+    };
+  }
+
+  const multiplier = getDeterministicMultiplier(item, quality);
+
+  const rebalancedStats = scaleStats(
+    baseItem.stats || getDefaultStats(),
+    multiplier,
+    quality,
+    source
+  );
+
+  const priceMultiplier = getPriceMultiplierBySource(item, quality);
+
+  return {
+    ...item,
+    id: item.id || baseItem.id,
+    baseItemId: baseItem.id,
+    name:
+      source === "shop"
+        ? baseItem.name
+        : getCleanItemName(baseItem.name, quality),
+    type: baseItem.type || item.type || "Unknown",
+    quality,
+    qualityEmoji: getQualityEmoji(quality),
+    requiredLevel: Number(baseItem.requiredLevel || item.requiredLevel || 1),
+    compatibleClasses:
+      baseItem.compatibleClasses || item.compatibleClasses || ["all"],
+    price: Math.floor(
+      Number(baseItem.price || item.price || 0) * priceMultiplier
+    ),
+    description: makeDescription(rebalancedStats),
+    stats: rebalancedStats,
+    emoji: baseItem.emoji || item.emoji || "📦",
+    quantity: Math.max(1, Number(item.quantity || 1)),
+    source,
+  };
+}
+
+function normalizeEquipment(equipment = {}) {
+  const safeEquipment = {
+    ...getDefaultEquipment(),
+    ...equipment,
+  };
+
+  return {
+    weapon: safeEquipment.weapon
+      ? rebalanceItemStats(safeEquipment.weapon)
+      : null,
+    helmet: safeEquipment.helmet
+      ? rebalanceItemStats(safeEquipment.helmet)
+      : null,
+    armor: safeEquipment.armor
+      ? rebalanceItemStats(safeEquipment.armor)
+      : null,
+    gloves: safeEquipment.gloves
+      ? rebalanceItemStats(safeEquipment.gloves)
+      : null,
+    pants: safeEquipment.pants
+      ? rebalanceItemStats(safeEquipment.pants)
+      : null,
+    boots: safeEquipment.boots
+      ? rebalanceItemStats(safeEquipment.boots)
+      : null,
+  };
+}
+
+function getBaseStatsByClassLevel(classId, level) {
+  if (typeof balanceConfig.getBaseStatsByClassLevel === "function") {
+    return balanceConfig.getBaseStatsByClassLevel(classId, level);
+  }
+
+  return {
+    attack: 10,
+    defense: 5,
+    maxHp: 100,
+    dodge: 0,
+    crit: 0,
+  };
+}
+
 function getNormalHitRandomBonus() {
   if (typeof balanceConfig.getCombatRandomBonus === "function") {
     return balanceConfig.getCombatRandomBonus("normalHitRandomBonus");
@@ -45,13 +434,19 @@ function getNormalHitRandomBonus() {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function calculateDamage(attackerAttack, defenderDefense) {
+function calculateDamage(attackerAttack, defenderDefense, isCritical = false) {
   const baseDamage =
     Number(attackerAttack || 0) - Number(defenderDefense || 0);
 
   const randomBonus = getNormalHitRandomBonus();
 
-  return Math.max(1, baseDamage + randomBonus);
+  let damage = Math.max(1, baseDamage + randomBonus);
+
+  if (isCritical) {
+    damage *= 2;
+  }
+
+  return Math.max(1, Math.floor(damage));
 }
 
 function rollChance(percent) {
@@ -134,10 +529,33 @@ module.exports = async function hitCommand(message) {
     const player = playerDoc.data();
     const battle = battleDoc.data();
 
-    let playerHp = Number(player.hp ?? 100);
+    const level = Math.max(1, Number(player.level || 1));
+    const classId = player.classId || "swordsman";
+
+    const baseStats = getBaseStatsByClassLevel(classId, level);
+    const equipment = normalizeEquipment(player.equipment || {});
+    const currentStats = calculateTotalStats(baseStats, equipment);
+
+    let playerHp = Math.min(
+      Number(player.hp ?? currentStats.maxHp),
+      Number(currentStats.maxHp || 100)
+    );
+
     let monsterHp = Number(battle.monsterHp ?? battle.monsterMaxHp);
 
     if (playerHp <= 0) {
+      transaction.update(playerRef, {
+        hp: 0,
+        baseStats,
+        equipment,
+        maxHp: currentStats.maxHp,
+        attack: currentStats.attack,
+        defense: currentStats.defense,
+        dodge: currentStats.dodge,
+        crit: currentStats.crit,
+        updatedAt: new Date(),
+      });
+
       transaction.delete(battleRef);
 
       return {
@@ -150,39 +568,44 @@ module.exports = async function hitCommand(message) {
     const monsterDodgeChance = Number(battle.monsterDodge ?? 0);
     const monsterDodged = rollChance(monsterDodgeChance);
 
-    const playerCritChance = Number(player.crit ?? 0);
-    const isCritical = rollChance(playerCritChance);
+    const playerCritChance = Number(currentStats.crit ?? 0);
+    const isCritical = !monsterDodged && rollChance(playerCritChance);
 
     let playerDamage = 0;
 
     if (!monsterDodged) {
       playerDamage = calculateDamage(
-        player.attack,
-        battle.monsterDefense
+        currentStats.attack,
+        battle.monsterDefense,
+        isCritical
       );
-
-      if (isCritical) {
-        playerDamage *= 2;
-      }
 
       monsterHp -= playerDamage;
     }
 
     if (monsterHp <= 0) {
-      const levelResult = applyLevelUp(player, battle.monsterExp);
+      const levelResult = applyLevelUp(
+        {
+          ...player,
+          baseStats,
+        },
+        battle.monsterExp
+      );
 
       const newGold =
         Number(player.gold ?? 0) + Number(battle.monsterGold || 0);
 
-      const equipment = player.equipment || {};
       const totalStats = calculateTotalStats(
         levelResult.baseStats,
         equipment
       );
 
-      const finalHp = levelResult.leveledUp ? totalStats.maxHp : playerHp;
+      const finalHp = levelResult.leveledUp
+        ? totalStats.maxHp
+        : Math.min(playerHp, Number(totalStats.maxHp || 100));
 
       const inventory = [...(player.inventory || [])];
+
       const droppedItem = generateMonsterDrop(
         Number(battle.monsterLevel || 1)
       );
@@ -195,6 +618,7 @@ module.exports = async function hitCommand(message) {
         gold: newGold,
 
         inventory,
+        equipment,
 
         baseStats: levelResult.baseStats,
 
@@ -230,23 +654,20 @@ module.exports = async function hitCommand(message) {
       };
     }
 
-    const playerDodgeChance = Number(player.dodge ?? 0);
+    const playerDodgeChance = Number(currentStats.dodge ?? 0);
     const dodged = rollChance(playerDodgeChance);
 
     const monsterCritChance = Number(battle.monsterCrit ?? 0);
-    const monsterCritical = rollChance(monsterCritChance);
+    const monsterCritical = !dodged && rollChance(monsterCritChance);
 
     let monsterDamage = 0;
 
     if (!dodged) {
       monsterDamage = calculateDamage(
         battle.monsterAttack,
-        player.defense
+        currentStats.defense,
+        monsterCritical
       );
-
-      if (monsterCritical) {
-        monsterDamage *= 2;
-      }
 
       playerHp -= monsterDamage;
     }
@@ -257,6 +678,16 @@ module.exports = async function hitCommand(message) {
 
       transaction.update(playerRef, {
         hp: 0,
+
+        baseStats,
+        equipment,
+
+        maxHp: currentStats.maxHp,
+        attack: currentStats.attack,
+        defense: currentStats.defense,
+        dodge: currentStats.dodge,
+        crit: currentStats.crit,
+
         reviveAvailableAt,
         raidReviveAvailableAt: null,
         updatedAt: new Date(),
@@ -278,11 +709,22 @@ module.exports = async function hitCommand(message) {
         reviveSeconds,
         reviveAvailableAt,
         instantReviveCost: getInstantReviveCost(),
+        totalStats: currentStats,
       };
     }
 
     transaction.update(playerRef, {
       hp: playerHp,
+
+      baseStats,
+      equipment,
+
+      maxHp: currentStats.maxHp,
+      attack: currentStats.attack,
+      defense: currentStats.defense,
+      dodge: currentStats.dodge,
+      crit: currentStats.crit,
+
       updatedAt: new Date(),
     });
 
@@ -304,6 +746,7 @@ module.exports = async function hitCommand(message) {
       isCritical,
       dodged,
       monsterCritical,
+      totalStats: currentStats,
     };
   });
 
@@ -433,7 +876,7 @@ module.exports = async function hitCommand(message) {
           : `${result.monsterCritical ? `🔥 **MONSTER CRITICAL HIT!**\n` : ""}` +
             `🔥 ${result.battle.monsterName} hit you for **${result.monsterDamage}** damage!\n`
       }` +
-      `❤️ Your HP: ${result.playerHp}/${Number(result.player.maxHp || 100)}\n\n` +
+      `❤️ Your HP: ${result.playerHp}/${Number(result.totalStats.maxHp || 100)}\n\n` +
       `Use \`!s hit\` to attack again or \`!s retreat\` to escape.`
   );
 };

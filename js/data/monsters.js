@@ -1,5 +1,26 @@
 const path = require("path");
 
+function getFallbackMonsterStats(level) {
+  const lv = Number(level || 1);
+
+  return {
+    hp: Math.floor(25 + lv * 25 + lv * lv * 0.35),
+    attack: Math.floor(4 + lv * 4.2 + lv * lv * 0.03),
+    defense: Math.floor(1 + lv * 2.2 + lv * lv * 0.018),
+    dodge: Math.min(25, Number((1 + lv * 0.18).toFixed(1))),
+    crit: Math.min(30, Number((2 + lv * 0.25).toFixed(1))),
+  };
+}
+
+function getFallbackMonsterReward(level) {
+  const lv = Number(level || 1);
+
+  return {
+    exp: Math.floor(35 + lv * 12 + lv * lv * 0.65),
+    gold: Math.floor(25 + lv * 7 + lv * lv * 0.28),
+  };
+}
+
 function monster({
   id,
   name,
@@ -7,23 +28,44 @@ function monster({
   hp,
   attack,
   defense,
-  dodge = 0,
-  crit = 0,
-  exp = 0,
-  gold = 0,
+  dodge,
+  crit,
+  exp,
+  gold,
   image,
+
+  // Keep false by default so balanceConfig controls monster scaling.
+  // Set true only for special monsters with custom/manual stats.
+  statOverride = false,
+  rewardOverride = false,
 }) {
+  const monsterLevel = Number(level || 1);
+  const fallbackStats = getFallbackMonsterStats(monsterLevel);
+  const fallbackReward = getFallbackMonsterReward(monsterLevel);
+
   return {
     id,
     name,
-    level: Number(level || 1),
-    hp: Number(hp || 1),
-    attack: Number(attack || 1),
-    defense: Number(defense || 0),
-    dodge: Number(dodge || 0),
-    crit: Number(crit || 0),
-    exp: Number(exp || 0),
-    gold: Number(gold || 0),
+    level: monsterLevel,
+
+    // These are safe fallback values.
+    // If hunt.js uses balanceConfig.getBalancedMonsterStats(),
+    // these values are ignored unless statOverride is true.
+    hp: Number(hp ?? fallbackStats.hp),
+    attack: Number(attack ?? fallbackStats.attack),
+    defense: Number(defense ?? fallbackStats.defense),
+    dodge: Number(dodge ?? fallbackStats.dodge),
+    crit: Number(crit ?? fallbackStats.crit),
+
+    // These are safe fallback rewards.
+    // If hunt.js uses balanceConfig.getMonsterReward(),
+    // these values are ignored unless rewardOverride is true.
+    exp: Number(exp ?? fallbackReward.exp),
+    gold: Number(gold ?? fallbackReward.gold),
+
+    statOverride,
+    rewardOverride,
+
     image: image
       ? path.join(__dirname, "../../img/monsters_img", image)
       : null,
@@ -35,13 +77,6 @@ const monsters = [
     id: "slime",
     name: "Slime",
     level: 1,
-    hp: 30,
-    attack: 5,
-    defense: 1,
-    dodge: 1,
-    crit: 2,
-    exp: 45,
-    gold: 35,
     image: "slime.png",
   }),
 
@@ -49,13 +84,6 @@ const monsters = [
     id: "goblin",
     name: "Goblin",
     level: 5,
-    hp: 80,
-    attack: 15,
-    defense: 5,
-    dodge: 2,
-    crit: 4,
-    exp: 60,
-    gold: 70,
     image: "goblin.png",
   }),
 
@@ -63,13 +91,6 @@ const monsters = [
     id: "wolf",
     name: "Wolf",
     level: 10,
-    hp: 150,
-    attack: 28,
-    defense: 10,
-    dodge: 4,
-    crit: 6,
-    exp: 120,
-    gold: 110,
     image: "wolf.png",
   }),
 
@@ -77,13 +98,6 @@ const monsters = [
     id: "skeleton_soldier",
     name: "Skeleton Soldier",
     level: 15,
-    hp: 250,
-    attack: 42,
-    defense: 18,
-    dodge: 5,
-    crit: 8,
-    exp: 220,
-    gold: 140,
     image: "skeleton_soldier.png",
   }),
 
@@ -91,13 +105,6 @@ const monsters = [
     id: "orc_warrior",
     name: "Orc Warrior",
     level: 20,
-    hp: 350,
-    attack: 60,
-    defense: 25,
-    dodge: 6,
-    crit: 9,
-    exp: 350,
-    gold: 160,
     image: "orc_warrior.png",
   }),
 
@@ -105,13 +112,6 @@ const monsters = [
     id: "cursed_spider",
     name: "Cursed Spider",
     level: 25,
-    hp: 470,
-    attack: 75,
-    defense: 35,
-    dodge: 8,
-    crit: 11,
-    exp: 450,
-    gold: 220,
     image: "cursed_spider.png",
   }),
 
@@ -119,13 +119,6 @@ const monsters = [
     id: "lava_golem",
     name: "Lava Golem",
     level: 30,
-    hp: 600,
-    attack: 95,
-    defense: 50,
-    dodge: 5,
-    crit: 12,
-    exp: 550,
-    gold: 280,
     image: "lava_golem.png",
   }),
 
@@ -133,13 +126,6 @@ const monsters = [
     id: "shadow_assassin",
     name: "Shadow Assassin",
     level: 35,
-    hp: 750,
-    attack: 115,
-    defense: 58,
-    dodge: 12,
-    crit: 16,
-    exp: 700,
-    gold: 350,
     image: "shadow_assassin.png",
   }),
 
@@ -147,13 +133,6 @@ const monsters = [
     id: "dark_knight",
     name: "Dark Knight",
     level: 40,
-    hp: 900,
-    attack: 140,
-    defense: 70,
-    dodge: 10,
-    crit: 15,
-    exp: 900,
-    gold: 500,
     image: "dark_knight.png",
   }),
 
@@ -161,13 +140,6 @@ const monsters = [
     id: "crystal_beast",
     name: "Crystal Beast",
     level: 45,
-    hp: 1100,
-    attack: 165,
-    defense: 85,
-    dodge: 12,
-    crit: 17,
-    exp: 1100,
-    gold: 650,
     image: "crystal_beast.png",
   }),
 
@@ -175,13 +147,6 @@ const monsters = [
     id: "hell_guardian",
     name: "Hell Guardian",
     level: 50,
-    hp: 1350,
-    attack: 195,
-    defense: 95,
-    dodge: 13,
-    crit: 19,
-    exp: 1400,
-    gold: 800,
     image: "hell_guardian.png",
   }),
 
@@ -189,13 +154,6 @@ const monsters = [
     id: "phantom_reaper",
     name: "Phantom Reaper",
     level: 55,
-    hp: 1600,
-    attack: 220,
-    defense: 110,
-    dodge: 16,
-    crit: 22,
-    exp: 1700,
-    gold: 950,
     image: "phantom_reaper.png",
   }),
 
@@ -203,13 +161,6 @@ const monsters = [
     id: "ancient_minotaur",
     name: "Ancient Minotaur",
     level: 60,
-    hp: 1850,
-    attack: 250,
-    defense: 125,
-    dodge: 14,
-    crit: 20,
-    exp: 2000,
-    gold: 1150,
     image: "ancient_minotaur.png",
   }),
 
@@ -217,13 +168,6 @@ const monsters = [
     id: "void_demon",
     name: "Void Demon",
     level: 65,
-    hp: 2100,
-    attack: 280,
-    defense: 140,
-    dodge: 18,
-    crit: 24,
-    exp: 2300,
-    gold: 1300,
     image: "void_demon.png",
   }),
 
@@ -231,13 +175,6 @@ const monsters = [
     id: "celestial_beast",
     name: "Celestial Beast",
     level: 70,
-    hp: 2350,
-    attack: 310,
-    defense: 155,
-    dodge: 20,
-    crit: 26,
-    exp: 2600,
-    gold: 1450,
     image: "celestial_beast.png",
   }),
 
@@ -245,13 +182,6 @@ const monsters = [
     id: "ancient_dragon",
     name: "Ancient Dragon",
     level: 75,
-    hp: 2500,
-    attack: 350,
-    defense: 180,
-    dodge: 22,
-    crit: 28,
-    exp: 3000,
-    gold: 1500,
     image: "ancient_dragon.png",
   }),
 
@@ -259,13 +189,6 @@ const monsters = [
     id: "chaos_titan",
     name: "Chaos Titan",
     level: 80,
-    hp: 3200,
-    attack: 420,
-    defense: 220,
-    dodge: 24,
-    crit: 32,
-    exp: 4000,
-    gold: 1900,
     image: "chaos_titan.png",
   }),
 
@@ -273,13 +196,6 @@ const monsters = [
     id: "demon_emperor",
     name: "Demon Emperor",
     level: 85,
-    hp: 4000,
-    attack: 500,
-    defense: 270,
-    dodge: 28,
-    crit: 36,
-    exp: 5200,
-    gold: 2400,
     image: "demon_emperor.png",
   }),
 
@@ -287,13 +203,6 @@ const monsters = [
     id: "world_devourer",
     name: "World Devourer",
     level: 90,
-    hp: 5200,
-    attack: 650,
-    defense: 340,
-    dodge: 32,
-    crit: 40,
-    exp: 7000,
-    gold: 3500,
     image: "world_devourer.png",
   }),
 ];

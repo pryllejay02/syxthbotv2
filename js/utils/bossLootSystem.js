@@ -11,17 +11,21 @@ function getNearestItemLevel(bossLevel) {
 
   const itemLevels =
     balanceConfig.bossDrop?.itemLevels ||
-    balanceConfig.item?.levels?.map(([itemLevel]) => itemLevel) ||
-    balanceConfig.ITEM_LEVELS?.map(([itemLevel]) => itemLevel) ||
+    balanceConfig.item?.levels ||
+    balanceConfig.ITEM_LEVELS ||
     [];
 
   if (!itemLevels.length) {
     return level;
   }
 
-  let nearest = Number(itemLevels[0] || 1);
+  let nearest = Array.isArray(itemLevels[0])
+    ? Number(itemLevels[0][0] || 1)
+    : Number(itemLevels[0] || 1);
 
-  for (const itemLevel of itemLevels) {
+  for (const entry of itemLevels) {
+    const itemLevel = Array.isArray(entry) ? entry[0] : entry;
+
     if (Number(itemLevel) <= level) {
       nearest = Number(itemLevel);
     }
@@ -30,28 +34,87 @@ function getNearestItemLevel(bossLevel) {
   return nearest;
 }
 
-function scaleStatsByQuality(stats = {}, quality = "Rare") {
+function normalizeQuality(quality = "Rare") {
+  return ["Rare", "Legendary"].includes(quality) ? quality : "Rare";
+}
+
+function getRollMultiplier(quality = "Rare") {
+  const normalizedQuality = normalizeQuality(quality);
+
   const rollConfig =
-    balanceConfig.bossDrop?.statRolls?.[quality] ||
+    balanceConfig.bossDrop?.statRolls?.[normalizedQuality] ||
     balanceConfig.bossDrop?.statRolls?.Rare ||
     {
-      min: 1.35,
-      max: 1.65,
+      min: 1.25,
+      max: 1.45,
     };
 
-  const multiplier =
-    typeof balanceConfig.randomBetween === "function"
-      ? balanceConfig.randomBetween(rollConfig.min, rollConfig.max)
-      : Math.random() *
-          (Number(rollConfig.max || 1) - Number(rollConfig.min || 1)) +
-        Number(rollConfig.min || 1);
+  const min = Number(rollConfig.min || 1);
+  const max = Number(rollConfig.max || min);
+
+  if (typeof balanceConfig.randomBetween === "function") {
+    return balanceConfig.randomBetween(min, max);
+  }
+
+  if (max <= min) return min;
+
+  return Math.random() * (max - min) + min;
+}
+
+function capPercentStat(statName, value, quality = "Rare") {
+  const normalizedQuality = normalizeQuality(quality);
+  const statValue = Number(value || 0);
+
+  if (typeof balanceConfig.capItemPercentStat === "function") {
+    return balanceConfig.capItemPercentStat(
+      statName,
+      statValue,
+      normalizedQuality,
+      "boss_raid"
+    );
+  }
+
+  const bossCap = Number(
+    balanceConfig.bossDrop?.statCaps?.[normalizedQuality]?.[statName] || 0
+  );
+
+  const shopCap = Number(
+    balanceConfig.item?.statCaps?.[statName] || 0
+  );
+
+  const cap = bossCap || shopCap;
+
+  if (!cap) return statValue;
+
+  return Math.min(statValue, cap);
+}
+
+function scaleStatsByQuality(stats = {}, quality = "Rare") {
+  const normalizedQuality = normalizeQuality(quality);
+  const multiplier = getRollMultiplier(normalizedQuality);
+
+  const attack = Math.floor(Number(stats.attack || 0) * multiplier);
+  const defense = Math.floor(Number(stats.defense || 0) * multiplier);
+  const maxHp = Math.floor(Number(stats.maxHp || 0) * multiplier);
+
+  const dodge = capPercentStat(
+    "dodge",
+    Number((Number(stats.dodge || 0) * multiplier).toFixed(1)),
+    normalizedQuality
+  );
+
+  const crit = capPercentStat(
+    "crit",
+    Number((Number(stats.crit || 0) * multiplier).toFixed(1)),
+    normalizedQuality
+  );
 
   return {
-    attack: Math.floor(Number(stats.attack || 0) * multiplier),
-    defense: Math.floor(Number(stats.defense || 0) * multiplier),
-    maxHp: Math.floor(Number(stats.maxHp || 0) * multiplier),
-    dodge: Number((Number(stats.dodge || 0) * multiplier).toFixed(1)),
-    crit: Number((Number(stats.crit || 0) * multiplier).toFixed(1)),
+    attack,
+    defense,
+    maxHp,
+    dodge,
+    crit,
   };
 }
 
@@ -68,23 +131,36 @@ function makeDescription(stats = {}) {
 }
 
 function getPriceMultiplier(quality = "Rare") {
-  return Number(balanceConfig.bossDrop?.priceMultiplier?.[quality] || 1);
+  const normalizedQuality = normalizeQuality(quality);
+
+  return Number(
+    balanceConfig.bossDrop?.priceMultiplier?.[normalizedQuality] || 1
+  );
 }
 
 function cleanItemName(name, quality) {
-  const baseName = String(name || "Unknown Item").replace(/^Common /, "");
+  const baseName = String(name || "Unknown Item").replace(
+    /^(Common|Rare|Legendary|Starter)\s+/i,
+    ""
+  );
 
   return `${quality} ${baseName}`;
 }
 
-function generateBossDrop(bossLevel, quality = "Rare") {
-  const itemLevel = getNearestItemLevel(bossLevel);
+function getPossibleBossDropItems(itemLevel) {
+  return shopItems.filter((item) => {
+    const type = String(item.type || "").toLowerCase();
 
-  const possibleItems = shopItems.filter(
-    (item) =>
-      String(item.type || "").toLowerCase() !== "consumable" &&
-      Number(item.requiredLevel || 1) === itemLevel
-  );
+    if (type === "consumable") return false;
+
+    return Number(item.requiredLevel || 1) === Number(itemLevel || 1);
+  });
+}
+
+function generateBossDrop(bossLevel, quality = "Rare") {
+  const normalizedQuality = normalizeQuality(quality);
+  const itemLevel = getNearestItemLevel(bossLevel);
+  const possibleItems = getPossibleBossDropItems(itemLevel);
 
   if (possibleItems.length === 0) {
     return null;
@@ -93,27 +169,31 @@ function generateBossDrop(bossLevel, quality = "Rare") {
   const baseItem =
     possibleItems[Math.floor(Math.random() * possibleItems.length)];
 
-  const stats = scaleStatsByQuality(baseItem.stats || {}, quality);
-  const qualityEmoji = getQualityEmoji(quality);
+  const stats = scaleStatsByQuality(
+    baseItem.stats || {},
+    normalizedQuality
+  );
+
+  const qualityEmoji = getQualityEmoji(normalizedQuality);
 
   return {
     ...baseItem,
 
-    id: `${baseItem.id}_${quality.toLowerCase()}_boss_${Date.now()}_${Math.floor(
+    id: `${baseItem.id}_${normalizedQuality.toLowerCase()}_boss_${Date.now()}_${Math.floor(
       Math.random() * 99999
     )}`,
 
     baseItemId: baseItem.baseItemId || baseItem.id,
-    name: cleanItemName(baseItem.name, quality),
+    name: cleanItemName(baseItem.name, normalizedQuality),
 
-    quality,
+    quality: normalizedQuality,
     qualityEmoji,
 
     requiredLevel: itemLevel,
     compatibleClasses: baseItem.compatibleClasses || ["all"],
 
     price: Math.floor(
-      Number(baseItem.price || 0) * getPriceMultiplier(quality)
+      Number(baseItem.price || 0) * getPriceMultiplier(normalizedQuality)
     ),
 
     description: makeDescription(stats),
@@ -132,6 +212,7 @@ function addItemToInventory(inventory = [], droppedItem) {
     (item) =>
       item.baseItemId === droppedItem.baseItemId &&
       item.quality === droppedItem.quality &&
+      item.source === droppedItem.source &&
       JSON.stringify(item.stats || {}) ===
         JSON.stringify(droppedItem.stats || {})
   );
@@ -150,6 +231,8 @@ function addItemToInventory(inventory = [], droppedItem) {
 }
 
 module.exports = {
+  getNearestItemLevel,
+  scaleStatsByQuality,
   generateBossDrop,
   addItemToInventory,
 };

@@ -15,7 +15,6 @@ const {
   deleteBossData,
   getRewardPenalty,
   rollChance,
-  getLegendaryChanceByRank,
   calculateThreatGain,
   pickBossTarget,
 } = require("../services/bossService");
@@ -24,29 +23,54 @@ const bossConfig = require("../data/bossConfig");
 const partyConfig = require("../data/partyConfig");
 const balanceConfig = require("../data/balanceConfig");
 
-function calculateDamage(playerAttack, bossDefense) {
-  const baseDamage = Number(playerAttack || 0) - Number(bossDefense || 0);
+function getRaidRandomBonus(type) {
+  if (typeof balanceConfig.getCombatRandomBonus === "function") {
+    return balanceConfig.getCombatRandomBonus(type);
+  }
 
-  const randomBonus = balanceConfig.getCombatRandomBonus(
-    "raidPlayerHitRandomBonus"
-  );
+  const combatConfig = balanceConfig.combat?.[type];
 
-  return Math.max(1, baseDamage + randomBonus);
+  if (!combatConfig) return 0;
+
+  const min = Math.ceil(Number(combatConfig.min || 0));
+  const max = Math.floor(Number(combatConfig.max || min));
+
+  if (max <= min) return min;
+
+  return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-function calculateBossDamage(bossAttack, playerDefense) {
+function calculateDamage(playerAttack, bossDefense, isCritical = false) {
+  const baseDamage = Number(playerAttack || 0) - Number(bossDefense || 0);
+
+  const randomBonus = getRaidRandomBonus("raidPlayerHitRandomBonus");
+
+  let damage = Math.max(1, baseDamage + randomBonus);
+
+  if (isCritical) {
+    damage *= 2;
+  }
+
+  return Math.max(1, Math.floor(damage));
+}
+
+function calculateBossDamage(bossAttack, playerDefense, isCritical = false) {
   const baseDamage = Number(bossAttack || 0) - Number(playerDefense || 0);
 
-  const randomBonus = balanceConfig.getCombatRandomBonus(
-    "raidBossHitRandomBonus"
-  );
+  const randomBonus = getRaidRandomBonus("raidBossHitRandomBonus");
 
-  return Math.max(1, baseDamage + randomBonus);
+  let damage = Math.max(1, baseDamage + randomBonus);
+
+  if (isCritical) {
+    damage *= 2;
+  }
+
+  return Math.max(1, Math.floor(damage));
 }
 
 function getRaidReviveHp(maxHp) {
   const revivePercent = Number(
-    balanceConfig.revive.raidReviveHpPercent || 50
+    balanceConfig.revive?.raidReviveHpPercent || 50
   );
 
   return Math.max(
@@ -55,8 +79,84 @@ function getRaidReviveHp(maxHp) {
   );
 }
 
+function getRaidReviveSeconds() {
+  return Number(balanceConfig.revive?.raidSeconds || 15);
+}
+
+function getRankingDeleteMinutes() {
+  return Number(
+    balanceConfig.boss?.rankingDeleteMinutes ||
+      bossConfig.rankingDeleteMinutes ||
+      10
+  );
+}
+
+function getPartyBonusConfig() {
+  return {
+    legendaryChance: Number(
+      balanceConfig.boss?.partyBonus?.legendaryChance ??
+        bossConfig.partyBonus?.legendaryChance ??
+        0
+    ),
+    gold: Number(
+      balanceConfig.boss?.partyBonus?.gold ??
+        bossConfig.partyBonus?.gold ??
+        0
+    ),
+    exp: Number(
+      balanceConfig.boss?.partyBonus?.exp ??
+        bossConfig.partyBonus?.exp ??
+        0
+    ),
+  };
+}
+
+function getParticipationRareChance() {
+  return Number(
+    balanceConfig.boss?.participationRareChance ??
+      bossConfig.participationRewards?.rareChance ??
+      0
+  );
+}
+
+function getLegendaryChanceByRank(rank) {
+  if (rank === 1) {
+    return Number(
+      balanceConfig.boss?.legendaryChance?.top1 ??
+        bossConfig.rankingRewards?.top1?.legendaryChance ??
+        0
+    );
+  }
+
+  if (rank >= 2 && rank <= 5) {
+    return Number(
+      balanceConfig.boss?.legendaryChance?.top2to5 ??
+        bossConfig.rankingRewards?.top2to5?.legendaryChance ??
+        0
+    );
+  }
+
+  if (rank >= 6 && rank <= 10) {
+    return Number(
+      balanceConfig.boss?.legendaryChance?.top6to10 ??
+        bossConfig.rankingRewards?.top6to10?.legendaryChance ??
+        0
+    );
+  }
+
+  return 0;
+}
+
+function getBossDodge(boss = {}) {
+  return Number(boss.dodge ?? boss.bossDodge ?? 0);
+}
+
+function getBossCrit(boss = {}) {
+  return Number(boss.crit ?? boss.bossCrit ?? 0);
+}
+
 async function autoReviveRaidPlayer(playerRef, userId, maxHp) {
-  const reviveSeconds = Number(balanceConfig.revive.raidSeconds || 15);
+  const reviveSeconds = getRaidReviveSeconds();
   const reviveAvailableAt = Date.now() + reviveSeconds * 1000;
 
   await playerRef.update({
@@ -155,8 +255,11 @@ function formatDroppedItem(item) {
 
 async function distributeRewards(worldId, boss, ranking) {
   const rewardLines = [];
+  const partyBonusConfig = getPartyBonusConfig();
 
   for (const entry of ranking) {
+    if (Number(entry.damage || 0) <= 0) continue;
+
     const playerRef = db.collection("players").doc(entry.userId);
 
     const result = await db.runTransaction(async (transaction) => {
@@ -176,26 +279,28 @@ async function distributeRewards(worldId, boss, ranking) {
       const hasPartyBonus = !!entry.partyId;
 
       const partyGoldBonus = hasPartyBonus
-        ? Number(bossConfig.partyBonus.gold || 0) / 100
+        ? partyBonusConfig.gold / 100
         : 0;
 
       const partyExpBonus = hasPartyBonus
-        ? Number(bossConfig.partyBonus.exp || 0) / 100
+        ? partyBonusConfig.exp / 100
         : 0;
 
       const partyLegendaryBonus = hasPartyBonus
-        ? Number(bossConfig.partyBonus.legendaryChance || 0)
+        ? partyBonusConfig.legendaryChance
         : 0;
 
       const baseGold = Number(boss.rewards?.gold || 0);
       const baseExp = Number(boss.rewards?.exp || 0);
 
-      const goldReward = Math.floor(
-        baseGold * penalty.goldMultiplier * (1 + partyGoldBonus)
+      const goldReward = Math.max(
+        0,
+        Math.floor(baseGold * penalty.goldMultiplier * (1 + partyGoldBonus))
       );
 
-      const expReward = Math.floor(
-        baseExp * penalty.expMultiplier * (1 + partyExpBonus)
+      const expReward = Math.max(
+        0,
+        Math.floor(baseExp * penalty.expMultiplier * (1 + partyExpBonus))
       );
 
       const levelResult = applyLevelUp(player, expReward);
@@ -212,8 +317,7 @@ async function distributeRewards(worldId, boss, ranking) {
         legendaryChance * penalty.dropMultiplier + partyLegendaryBonus;
 
       const rareChance =
-        Number(bossConfig.participationRewards.rareChance || 0) *
-        penalty.dropMultiplier;
+        getParticipationRareChance() * penalty.dropMultiplier;
 
       const gotLegendary = rollChance(legendaryChance);
       const gotRare = !gotLegendary && rollChance(rareChance);
@@ -234,12 +338,14 @@ async function distributeRewards(worldId, boss, ranking) {
 
       const newGold = Number(player.gold || 0) + goldReward;
 
-      const finalHp = levelResult.leveledUp
-        ? totalStats.maxHp
-        : Math.min(
-            Number(player.hp || totalStats.maxHp),
-            Number(totalStats.maxHp || 100)
-          );
+      const currentHp = Number(player.hp ?? totalStats.maxHp);
+
+const finalHp = levelResult.leveledUp
+  ? totalStats.maxHp
+  : Math.min(
+      Math.max(0, currentHp),
+      Number(totalStats.maxHp || 100)
+    );
 
       transaction.update(playerRef, {
         level: levelResult.level,
@@ -338,7 +444,9 @@ module.exports = async function raidCommand(message, args = []) {
         `📌 Recommended: **Lv.${boss.recommendedLevel.min}-${boss.recommendedLevel.max}**\n` +
         `❤️ HP: **${boss.hp}/${boss.maxHp}**\n` +
         `⚔️ Attack: **${boss.attack}**\n` +
-        `🛡️ Defense: **${boss.defense}**\n\n` +
+        `🛡️ Defense: **${boss.defense}**\n` +
+        `💨 Dodge: **${getBossDodge(boss)}%**\n` +
+        `💥 Crit: **${getBossCrit(boss)}%**\n\n` +
         `Use \`!s raid hit\` to attack.`
     );
   }
@@ -350,6 +458,10 @@ module.exports = async function raidCommand(message, args = []) {
         "`!s raid status`\n" +
         "`!s raid hit`"
     );
+  }
+
+  if (!boss || boss.status !== "active") {
+    return message.reply("❌ No active world boss in this world right now.");
   }
 
   if (Number(player.hp || 0) <= 0) {
@@ -380,7 +492,17 @@ module.exports = async function raidCommand(message, args = []) {
       };
     }
 
-    const damage = calculateDamage(player.attack, currentBoss.defense);
+    const bossDodged = rollChance(getBossDodge(currentBoss));
+    const playerCritical = !bossDodged && rollChance(Number(player.crit || 0));
+
+    const damage = bossDodged
+      ? 0
+      : calculateDamage(
+          player.attack,
+          currentBoss.defense,
+          playerCritical
+        );
+
     const newBossHp = Math.max(0, Number(currentBoss.hp || 0) - damage);
     const defeated = newBossHp <= 0;
 
@@ -403,6 +525,8 @@ module.exports = async function raidCommand(message, args = []) {
       damage,
       newBossHp,
       defeated,
+      bossDodged,
+      playerCritical,
     };
   });
 
@@ -418,22 +542,30 @@ module.exports = async function raidCommand(message, args = []) {
   const newBossHp = hitResult.newBossHp;
 
   const party = await getPlayerParty(userId);
-  const threatGain = calculateThreatGain(player, damage);
+  const threatGain = damage > 0 ? calculateThreatGain(player, damage) : 0;
 
-  await saveDamage(
-    worldId,
-    {
-      userId,
-      username: player.username || message.author.username,
-    },
-    damage,
-    party?.id || null,
-    threatGain
-  );
+  if (damage > 0) {
+    await saveDamage(
+      worldId,
+      {
+        userId,
+        username: player.username || message.author.username,
+      },
+      damage,
+      party?.id || null,
+      threatGain
+    );
+  }
 
   if (newBossHp > 0) {
     await message.reply(
-      `⚔️ You hit **${bossForHit.bossName}** for **${damage}** damage!\n` +
+      `${hitResult.bossDodged ? `💨 **${bossForHit.bossName} dodged your attack!**\n` : ""}` +
+        `${hitResult.playerCritical ? `💥 **CRITICAL HIT!**\n` : ""}` +
+        `${
+          damage > 0
+            ? `⚔️ You hit **${bossForHit.bossName}** for **${damage}** damage!\n`
+            : `⚔️ You dealt **0** damage.\n`
+        }` +
         `🔥 Threat Gained: **${threatGain}**\n` +
         `❤️ Boss HP: **${newBossHp}/${bossForHit.maxHp}**`
     );
@@ -461,9 +593,12 @@ module.exports = async function raidCommand(message, args = []) {
               }** dodged **${bossForHit.bossName}'s** attack!`
             );
           } else {
+            const bossCritical = rollChance(getBossCrit(bossForHit));
+
             const bossDamage = calculateBossDamage(
               bossForHit.attack,
-              targetDefense
+              targetDefense,
+              bossCritical
             );
 
             const newTargetHp = Math.max(0, targetHp - bossDamage);
@@ -479,11 +614,12 @@ module.exports = async function raidCommand(message, args = []) {
                 `👹 **${bossForHit.bossName}** attacked **${
                   targetPlayer.username || target.username
                 }**!\n` +
+                  `${bossCritical ? `💥 **BOSS CRITICAL HIT!**\n` : ""}` +
                   `💥 Damage: **${bossDamage}**\n` +
                   `💀 **${
                     targetPlayer.username || target.username
                   }** was defeated!\n` +
-                  `⏳ Auto revive in **${reviveSeconds}s** with ${balanceConfig.revive.raidReviveHpPercent}% HP.`
+                  `⏳ Auto revive in **${reviveSeconds}s** with ${balanceConfig.revive?.raidReviveHpPercent || 50}% HP.`
               );
             } else {
               await targetRef.update({
@@ -495,6 +631,7 @@ module.exports = async function raidCommand(message, args = []) {
                 `👹 **${bossForHit.bossName}** attacked **${
                   targetPlayer.username || target.username
                 }**!\n` +
+                  `${bossCritical ? `💥 **BOSS CRITICAL HIT!**\n` : ""}` +
                   `💥 Damage: **${bossDamage}**\n` +
                   `❤️ ${
                     targetPlayer.username || target.username
@@ -506,14 +643,14 @@ module.exports = async function raidCommand(message, args = []) {
       }
     }
 
-    return;
+    return null;
   }
 
   const topRanking = await getDamageRanking(worldId, 10);
   const allRanking = await getAllDamageRanking(worldId);
   const rankingText = formatRanking(topRanking);
   const rewardText = await distributeRewards(worldId, bossForHit, allRanking);
-  const rankingDeleteMinutes = Number(bossConfig.rankingDeleteMinutes || 10);
+  const rankingDeleteMinutes = getRankingDeleteMinutes();
 
   await message.channel.send(
     `👹 **${bossForHit.bossName} HAS BEEN DEFEATED!**\n\n` +

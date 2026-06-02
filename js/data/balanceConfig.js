@@ -24,10 +24,9 @@ const ITEM_LEVELS = [
 const balanceConfig = {
   maxLevel: MAX_LEVEL,
 
-  // Final player stat caps after base stats + equipment.
   statCaps: {
-    dodge: 75,
-    crit: 85,
+    dodge: 60,
+    crit: 75,
   },
 
   economy: {
@@ -42,10 +41,10 @@ const balanceConfig = {
 
     sellMultiplier: {
       Starter: 0,
-      Common: 0.5,
-      Rare: 0.75,
-      Legendary: 0.85,
-      default: 0.5,
+      Common: 0.45,
+      Rare: 0.65,
+      Legendary: 0.8,
+      default: 0.45,
     },
   },
 
@@ -59,17 +58,17 @@ const balanceConfig = {
   combat: {
     normalHitRandomBonus: {
       min: 1,
-      max: 8,
+      max: 6,
     },
 
     raidPlayerHitRandomBonus: {
       min: 5,
-      max: 19,
+      max: 15,
     },
 
     raidBossHitRandomBonus: {
-      min: 10,
-      max: 29,
+      min: 8,
+      max: 22,
     },
   },
 
@@ -97,10 +96,10 @@ const balanceConfig = {
 
   powerFormula: {
     attack: 1,
-    defense: 1.5,
-    maxHp: 0.2,
-    dodge: 10,
-    crit: 10,
+    defense: 1.4,
+    maxHp: 0.18,
+    dodge: 6,
+    crit: 6,
     level: 100,
     kills: 3,
   },
@@ -115,86 +114,109 @@ const balanceConfig = {
     statRolls: {
       Common: {
         min: 1.0,
-        max: 1.12,
+        max: 1.05,
       },
 
       Rare: {
-        min: 1.25,
-        max: 1.55,
+        min: 1.15,
+        max: 1.3,
       },
 
       Legendary: {
-        min: 1.85,
-        max: 2.35,
+        min: 1.45,
+        max: 1.75,
       },
+    },
+
+    statCaps: {
+      Common: {
+        dodge: 2.5,
+        crit: 3.5,
+      },
+
+      Rare: {
+        dodge: 4,
+        crit: 5.5,
+      },
+
+      Legendary: {
+        dodge: 7,
+        crit: 10,
+      },
+    },
+
+    priceMultiplier: {
+      Common: 1,
+      Rare: 1.6,
+      Legendary: 4,
     },
   },
 
   classBaseStats: {
     swordsman: {
-      maxHp: 125,
+      maxHp: 120,
       attack: 14,
       defense: 8,
-      dodge: 5,
-      crit: 8,
+      dodge: 3,
+      crit: 5,
     },
 
     archer: {
-      maxHp: 100,
+      maxHp: 95,
       attack: 18,
       defense: 5,
-      dodge: 11,
-      crit: 14,
+      dodge: 7,
+      crit: 9,
     },
 
     assassin: {
-      maxHp: 90,
+      maxHp: 85,
       attack: 20,
       defense: 4,
-      dodge: 15,
-      crit: 18,
+      dodge: 10,
+      crit: 12,
     },
 
     tanker: {
-      maxHp: 175,
+      maxHp: 170,
       attack: 10,
       defense: 15,
-      dodge: 3,
-      crit: 5,
+      dodge: 2,
+      crit: 3,
     },
   },
 
   classGrowth: {
     swordsman: {
-      maxHp: 13,
-      attack: 3,
-      defense: 2,
-      dodge: 0.06,
-      crit: 0.05,
+      maxHp: 12,
+      attack: 2.6,
+      defense: 1.8,
+      dodge: 0.03,
+      crit: 0.04,
     },
 
     archer: {
-      maxHp: 10,
-      attack: 3.4,
-      defense: 1.3,
-      dodge: 0.09,
-      crit: 0.11,
+      maxHp: 9,
+      attack: 3.1,
+      defense: 1.1,
+      dodge: 0.06,
+      crit: 0.08,
     },
 
     assassin: {
-      maxHp: 9,
-      attack: 3.6,
-      defense: 1.1,
-      dodge: 0.12,
-      crit: 0.14,
+      maxHp: 8,
+      attack: 3.3,
+      defense: 0.9,
+      dodge: 0.08,
+      crit: 0.1,
     },
 
     tanker: {
-      maxHp: 18,
-      attack: 2.2,
-      defense: 3.1,
-      dodge: 0.03,
-      crit: 0.03,
+      maxHp: 16,
+      attack: 2.0,
+      defense: 2.8,
+      dodge: 0.02,
+      crit: 0.02,
     },
   },
 
@@ -216,33 +238,27 @@ const balanceConfig = {
     Rare: {
       emoji: "🔵",
       color: "#3B82F6",
-      statMultiplier: 1.4,
-      priceMultiplier: 2,
+      statMultiplier: 1.25,
+      priceMultiplier: 1.8,
     },
 
     Legendary: {
       emoji: "🟠",
       color: "#F59E0B",
-      statMultiplier: 2.15,
-      priceMultiplier: 5,
+      statMultiplier: 1.75,
+      priceMultiplier: 4,
     },
   },
 
   item: {
     levels: ITEM_LEVELS,
 
-    // Used for ATK, DEF, and HP only.
-    scalePerTier: 0.85,
+    scalePerTier: 0.45,
+    percentScalePerTier: 0.04,
 
-    // Used for Dodge and Crit only.
-    // This prevents high-level items from getting extreme % stats.
-    percentScalePerTier: 0.08,
-
-    // Per Common shop item cap before Rare/Legendary roll multipliers.
-    // Example: one Common shop item can only have up to 4 Dodge / 5 Crit.
     statCaps: {
-      dodge: 4,
-      crit: 5,
+      dodge: 2.5,
+      crit: 3.5,
     },
 
     price: {
@@ -257,16 +273,86 @@ const balanceConfig = {
     expMultiplier: 1,
     goldMultiplier: 1,
 
-    // Normal monsters rely on these formulas by default.
-    // If a monster has rewardOverride: true, then monster.exp / monster.gold will be used.
     expFormula(level) {
       const lv = Number(level || 1);
+
       return Math.floor(35 + lv * 12 + lv * lv * 0.65);
     },
 
     goldFormula(level) {
       const lv = Number(level || 1);
+
       return Math.floor(25 + lv * 7 + lv * lv * 0.28);
+    },
+  },
+
+  monsterStats: {
+    dodgeCap: 25,
+    critCap: 30,
+
+    hpFormula(level) {
+      const lv = Number(level || 1);
+
+      return Math.floor(25 + lv * 25 + lv * lv * 0.35);
+    },
+
+    attackFormula(level) {
+      const lv = Number(level || 1);
+
+      return Math.floor(4 + lv * 4.2 + lv * lv * 0.03);
+    },
+
+    defenseFormula(level) {
+      const lv = Number(level || 1);
+
+      return Math.floor(1 + lv * 2.2 + lv * lv * 0.018);
+    },
+
+    dodgeFormula(level) {
+      const lv = Number(level || 1);
+
+      return Math.min(25, Number((1 + lv * 0.18).toFixed(1)));
+    },
+
+    critFormula(level) {
+      const lv = Number(level || 1);
+
+      return Math.min(30, Number((2 + lv * 0.25).toFixed(1)));
+    },
+  },
+
+  bossStats: {
+    dodgeCap: 35,
+    critCap: 45,
+
+    hpFormula(level) {
+      const lv = Number(level || 1);
+
+      return Math.floor(5500 + lv * 250 + lv * lv * 40);
+    },
+
+    attackFormula(level) {
+      const lv = Number(level || 1);
+
+      return Math.floor(30 + lv * 2.3 + lv * lv * 0.045);
+    },
+
+    defenseFormula(level) {
+      const lv = Number(level || 1);
+
+      return Math.floor(10 + lv * 1.2 + lv * lv * 0.02);
+    },
+
+    dodgeFormula(level) {
+      const lv = Number(level || 1);
+
+      return Math.min(35, Number((3 + lv * 0.18).toFixed(1)));
+    },
+
+    critFormula(level) {
+      const lv = Number(level || 1);
+
+      return Math.min(45, Number((5 + lv * 0.28).toFixed(1)));
     },
   },
 
@@ -274,26 +360,38 @@ const balanceConfig = {
     minLevel: 5,
 
     rates: {
-      rare: 10,
-      common: 35,
-      none: 55,
+      rare: 8,
+      common: 32,
+      none: 60,
     },
 
     statRolls: {
       Common: {
         min: 1.0,
-        max: 1.12,
+        max: 1.05,
       },
 
       Rare: {
-        min: 1.25,
-        max: 1.55,
+        min: 1.15,
+        max: 1.3,
+      },
+    },
+
+    statCaps: {
+      Common: {
+        dodge: 3,
+        crit: 4,
+      },
+
+      Rare: {
+        dodge: 4,
+        crit: 5.5,
       },
     },
 
     priceMultiplier: {
       Common: 1,
-      Rare: 1.75,
+      Rare: 1.6,
     },
   },
 
@@ -302,19 +400,31 @@ const balanceConfig = {
 
     statRolls: {
       Rare: {
-        min: 1.35,
-        max: 1.65,
+        min: 1.25,
+        max: 1.45,
       },
 
       Legendary: {
-        min: 1.85,
-        max: 2.35,
+        min: 1.55,
+        max: 1.85,
+      },
+    },
+
+    statCaps: {
+      Rare: {
+        dodge: 5,
+        crit: 7,
+      },
+
+      Legendary: {
+        dodge: 7,
+        crit: 10,
       },
     },
 
     priceMultiplier: {
       Rare: 2,
-      Legendary: 5,
+      Legendary: 4.5,
     },
   },
 
@@ -322,16 +432,16 @@ const balanceConfig = {
     rankingDeleteMinutes: 10,
     bossExpireMinutes: 120,
 
-    participationRareChance: 25,
+    participationRareChance: 22,
 
     legendaryChance: {
-      top1: 12,
-      top2to5: 7,
+      top1: 10,
+      top2to5: 6,
       top6to10: 3,
     },
 
     partyBonus: {
-      legendaryChance: 3,
+      legendaryChance: 2,
       gold: 5,
       exp: 5,
     },
@@ -349,7 +459,7 @@ const balanceConfig = {
         maxLevelDifference: 20,
         goldMultiplier: 0.8,
         expMultiplier: 0.8,
-        dropMultiplier: 0.8,
+        dropMultiplier: 0.75,
         legendaryAllowed: true,
         label: "Slightly Reduced",
       },
@@ -357,24 +467,24 @@ const balanceConfig = {
         maxLevelDifference: 30,
         goldMultiplier: 0.5,
         expMultiplier: 0.5,
-        dropMultiplier: 0.4,
+        dropMultiplier: 0.35,
         legendaryAllowed: true,
         label: "Reduced",
       },
       {
         maxLevelDifference: 50,
-        goldMultiplier: 0.25,
+        goldMultiplier: 0.2,
         expMultiplier: 0,
-        dropMultiplier: 0.15,
+        dropMultiplier: 0.1,
         legendaryAllowed: false,
         label: "Heavily Reduced",
       },
     ],
 
     rewardPenaltyFallback: {
-      goldMultiplier: 0.1,
+      goldMultiplier: 0.05,
       expMultiplier: 0,
-      dropMultiplier: 0.05,
+      dropMultiplier: 0.03,
       legendaryAllowed: false,
       label: "Almost No Reward",
     },
@@ -387,22 +497,22 @@ function getRequiredExp(level) {
   if (lv >= MAX_LEVEL) return Infinity;
 
   if (lv <= 10) {
-    return Math.floor(40 + lv * 30 + lv * lv * 6);
+    return Math.floor(45 + lv * 32 + lv * lv * 7);
   }
 
   if (lv <= 30) {
-    return Math.floor(250 + lv * 60 + lv * lv * 14);
+    return Math.floor(280 + lv * 65 + lv * lv * 15);
   }
 
   if (lv <= 60) {
-    return Math.floor(800 + lv * 110 + lv * lv * 24);
+    return Math.floor(900 + lv * 115 + lv * lv * 25);
   }
 
   if (lv <= 90) {
-    return Math.floor(1800 + lv * 170 + lv * lv * 38);
+    return Math.floor(2000 + lv * 175 + lv * lv * 40);
   }
 
-  return Math.floor(5000 + lv * 250 + lv * lv * 50);
+  return Math.floor(5500 + lv * 260 + lv * lv * 52);
 }
 
 function getClassBaseStats(classId = "swordsman") {
@@ -426,11 +536,11 @@ function getLevelStatGain(classId = "swordsman", level = 1) {
   let stageMultiplier = 1;
 
   if (lv > 80) {
-    stageMultiplier = 1.25;
+    stageMultiplier = 1.18;
   } else if (lv > 50) {
-    stageMultiplier = 1.15;
+    stageMultiplier = 1.1;
   } else if (lv > 20) {
-    stageMultiplier = 1.05;
+    stageMultiplier = 1.04;
   }
 
   return {
@@ -475,7 +585,7 @@ function getItemScaleByTierIndex(index) {
   const safeIndex = Math.max(0, Number(index || 0));
 
   return Number(
-    (1 + safeIndex * Number(balanceConfig.item.scalePerTier || 0.85)).toFixed(2)
+    (1 + safeIndex * Number(balanceConfig.item.scalePerTier || 0.45)).toFixed(2)
   );
 }
 
@@ -485,14 +595,38 @@ function getItemPercentScaleByTierIndex(index) {
   return Number(
     (
       1 +
-      safeIndex * Number(balanceConfig.item.percentScalePerTier || 0.08)
+      safeIndex * Number(balanceConfig.item.percentScalePerTier || 0.04)
     ).toFixed(2)
   );
 }
 
-function capItemPercentStat(statName, value) {
-  const cap = Number(balanceConfig.item?.statCaps?.[statName] || 0);
+function capItemPercentStat(
+  statName,
+  value,
+  quality = "Common",
+  source = "shop"
+) {
   const statValue = Number(value || 0);
+
+  let cap = Number(balanceConfig.item?.statCaps?.[statName] || 0);
+
+  if (source === "monster_drop") {
+    cap = Number(
+      balanceConfig.monsterDrop?.statCaps?.[quality]?.[statName] || cap
+    );
+  }
+
+  if (source === "boss_raid") {
+    cap = Number(
+      balanceConfig.bossDrop?.statCaps?.[quality]?.[statName] || cap
+    );
+  }
+
+  if (source === "admin_generated" || source === "admin") {
+    cap = Number(
+      balanceConfig.adminItem?.statCaps?.[quality]?.[statName] || cap
+    );
+  }
 
   if (!cap) return statValue;
 
@@ -576,6 +710,52 @@ function getMonsterReward(monster = {}) {
   };
 }
 
+function getBalancedMonsterStats(monster = {}) {
+  if (monster.statOverride === true) {
+    return {
+      hp: Number(monster.hp || 1),
+      attack: Number(monster.attack || 1),
+      defense: Number(monster.defense || 0),
+      dodge: Number(monster.dodge || 0),
+      crit: Number(monster.crit || 0),
+    };
+  }
+
+  const level = Number(monster.level || 1);
+  const config = balanceConfig.monsterStats;
+
+  return {
+    hp: config.hpFormula(level),
+    attack: config.attackFormula(level),
+    defense: config.defenseFormula(level),
+    dodge: config.dodgeFormula(level),
+    crit: config.critFormula(level),
+  };
+}
+
+function getBalancedBossStats(boss = {}) {
+  if (boss.statOverride === true) {
+    return {
+      hp: Number(boss.hp || 1),
+      attack: Number(boss.attack || 1),
+      defense: Number(boss.defense || 0),
+      dodge: Number(boss.dodge || 0),
+      crit: Number(boss.crit || 0),
+    };
+  }
+
+  const level = Number(boss.level || 1);
+  const config = balanceConfig.bossStats;
+
+  return {
+    hp: config.hpFormula(level),
+    attack: config.attackFormula(level),
+    defense: config.defenseFormula(level),
+    dodge: config.dodgeFormula(level),
+    crit: config.critFormula(level),
+  };
+}
+
 function getBossRewardPenalty(playerLevel, bossLevel) {
   const levelDifference = Number(playerLevel || 1) - Number(bossLevel || 1);
 
@@ -615,10 +795,10 @@ function calculatePower(player = {}) {
 
   return Math.floor(
     attack * Number(formula.attack || 1) +
-      defense * Number(formula.defense || 1.5) +
-      maxHp * Number(formula.maxHp || 0.2) +
-      dodge * Number(formula.dodge || 10) +
-      crit * Number(formula.crit || 10) +
+      defense * Number(formula.defense || 1.4) +
+      maxHp * Number(formula.maxHp || 0.18) +
+      dodge * Number(formula.dodge || 6) +
+      crit * Number(formula.crit || 6) +
       level * Number(formula.level || 100)
   );
 }
@@ -651,6 +831,8 @@ module.exports = {
   randomBetween,
   randomIntBetween,
   getMonsterReward,
+  getBalancedMonsterStats,
+  getBalancedBossStats,
   getBossRewardPenalty,
   getSellMultiplier,
   getCombatRandomBonus,

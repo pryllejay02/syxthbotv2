@@ -4,22 +4,34 @@ const shopItems = require("../data/shopItems");
 const { getQualityEmoji } = require("../utils/qualitySystem");
 const balanceConfig = require("../data/balanceConfig");
 
+const ITEM_LEVELS =
+  balanceConfig.item?.levels ||
+  balanceConfig.ITEM_LEVELS ||
+  [];
+
 const SHOP_LEVELS = [
   1,
-  ...balanceConfig.ITEM_LEVELS.map(([level]) => level),
-];
+  ...ITEM_LEVELS.map(([level]) => Number(level || 1)),
+]
+  .filter((level, index, array) => array.indexOf(level) === index)
+  .sort((a, b) => a - b);
+
+const MAX_ITEMS_DISPLAYED = 20;
 
 function canUseItem(player, item) {
-  if (!item.compatibleClasses) return true;
-  if (item.compatibleClasses.includes("all")) return true;
+  const compatibleClasses = Array.isArray(item.compatibleClasses)
+    ? item.compatibleClasses
+    : ["all"];
 
-  return item.compatibleClasses.includes(player.classId);
+  if (compatibleClasses.includes("all")) return true;
+
+  return compatibleClasses.includes(player.classId);
 }
 
 function getNearestShopLevel(playerLevel) {
   const level = Number(playerLevel || 1);
 
-  let nearest = 1;
+  let nearest = SHOP_LEVELS[0] || 1;
 
   for (const shopLevel of SHOP_LEVELS) {
     if (shopLevel <= level) {
@@ -65,6 +77,78 @@ function matchesTypeFilter(item, filter) {
   }
 
   return itemType === filter;
+}
+
+function capShopPercentStat(statName, value) {
+  const statValue = Number(value || 0);
+
+  if (typeof balanceConfig.capItemPercentStat === "function") {
+    return balanceConfig.capItemPercentStat(
+      statName,
+      statValue,
+      "Common",
+      "shop"
+    );
+  }
+
+  const cap = Number(balanceConfig.item?.statCaps?.[statName] || 0);
+
+  if (!cap) return statValue;
+
+  return Math.min(statValue, cap);
+}
+
+function normalizeShopStats(stats = {}) {
+  return {
+    attack: Math.floor(Number(stats.attack || 0)),
+    defense: Math.floor(Number(stats.defense || 0)),
+    maxHp: Math.floor(Number(stats.maxHp || 0)),
+    dodge: capShopPercentStat(
+      "dodge",
+      Number(Number(stats.dodge || 0).toFixed(1))
+    ),
+    crit: capShopPercentStat(
+      "crit",
+      Number(Number(stats.crit || 0).toFixed(1))
+    ),
+  };
+}
+
+function makeDescription(stats = {}) {
+  const parts = [];
+
+  if (stats.attack) parts.push(`+${stats.attack} ATK`);
+  if (stats.defense) parts.push(`+${stats.defense} DEF`);
+  if (stats.maxHp) parts.push(`+${stats.maxHp} HP`);
+  if (stats.dodge) parts.push(`+${stats.dodge}% Dodge`);
+  if (stats.crit) parts.push(`+${stats.crit}% Crit`);
+
+  return parts.length ? parts.join(", ") : "No bonus stats";
+}
+
+function normalizeShopItem(item = {}) {
+  const quality = item.quality || "Common";
+  const stats = normalizeShopStats(item.stats || {});
+
+  return {
+    ...item,
+
+    baseItemId: item.baseItemId || item.id,
+
+    quality,
+    qualityEmoji: item.qualityEmoji || getQualityEmoji(quality),
+
+    requiredLevel: Number(item.requiredLevel || 1),
+    compatibleClasses: item.compatibleClasses || ["all"],
+
+    price: Math.max(0, Math.floor(Number(item.price || 0))),
+
+    stats,
+    description: item.description || makeDescription(stats),
+
+    source: item.source || "shop",
+    emoji: item.emoji || "📦",
+  };
 }
 
 function formatStats(stats = {}) {
@@ -124,8 +208,85 @@ function sortShopItems(items = []) {
 
     if (typeA !== typeB) return typeA - typeB;
 
+    const levelA = Number(a.requiredLevel || 1);
+    const levelB = Number(b.requiredLevel || 1);
+
+    if (levelA !== levelB) return levelA - levelB;
+
     return String(a.name || "").localeCompare(String(b.name || ""));
   });
+}
+
+function getAvailableLevelsText() {
+  return SHOP_LEVELS.length ? SHOP_LEVELS.join(" ") : "1";
+}
+
+function getShopUsageText() {
+  return (
+    "Examples:\n" +
+    "`!s shop`\n" +
+    "`!s shop 5`\n" +
+    "`!s shop 5 weapon`\n" +
+    "`!s shop 10 equipment`\n" +
+    "`!s shop consumable`\n\n" +
+    "Filters:\n" +
+    "`all`, `equipment`, `weapon`, `helmet`, `armor`, `gloves`, `pants`, `boots`, `consumable`"
+  );
+}
+
+function parseShopRequest(args = [], playerLevel = 1) {
+  const firstArg = String(args[0] || "").toLowerCase();
+  const secondArg = String(args[1] || "").toLowerCase();
+
+  let requestedLevel = null;
+  let typeFilter = "all";
+
+  if (!firstArg) {
+    requestedLevel = getNearestShopLevel(playerLevel);
+    return {
+      ok: true,
+      requestedLevel,
+      typeFilter,
+    };
+  }
+
+  if (!Number.isNaN(Number(firstArg))) {
+    requestedLevel = Number(firstArg);
+    typeFilter = normalizeTypeFilter(secondArg || "all");
+
+    if (!typeFilter) {
+      return {
+        ok: false,
+        message:
+          "❌ Invalid shop filter.\n\n" +
+          "Use: `all`, `equipment`, `weapon`, `helmet`, `armor`, `gloves`, `pants`, `boots`, `consumable`",
+      };
+    }
+
+    return {
+      ok: true,
+      requestedLevel,
+      typeFilter,
+    };
+  }
+
+  requestedLevel = getNearestShopLevel(playerLevel);
+  typeFilter = normalizeTypeFilter(firstArg);
+
+  if (!typeFilter) {
+    return {
+      ok: false,
+      message:
+        "❌ Invalid shop command.\n\n" +
+        getShopUsageText(),
+    };
+  }
+
+  return {
+    ok: true,
+    requestedLevel,
+    typeFilter,
+  };
 }
 
 module.exports = async function shopCommand(message, args = []) {
@@ -139,57 +300,33 @@ module.exports = async function shopCommand(message, args = []) {
   }
 
   const player = playerDoc.data();
+  const playerLevel = Number(player.level || 1);
 
-  const firstArg = String(args[0] || "").toLowerCase();
-  const secondArg = String(args[1] || "").toLowerCase();
+  const request = parseShopRequest(args, playerLevel);
 
-  let requestedLevel = null;
-  let typeFilter = "all";
-
-  if (!firstArg) {
-    requestedLevel = getNearestShopLevel(Number(player.level || 1));
-  } else if (!Number.isNaN(Number(firstArg))) {
-    requestedLevel = Number(firstArg);
-    typeFilter = normalizeTypeFilter(secondArg || "all");
-
-    if (!typeFilter) {
-      return message.reply(
-        "❌ Invalid shop filter.\n\n" +
-          "Use: `all`, `equipment`, `weapon`, `helmet`, `armor`, `gloves`, `pants`, `boots`, `consumable`"
-      );
-    }
-  } else {
-    requestedLevel = 1;
-    typeFilter = normalizeTypeFilter(firstArg);
-
-    if (!typeFilter) {
-      return message.reply(
-        "❌ Invalid shop command.\n\n" +
-          "Examples:\n" +
-          "`!s shop`\n" +
-          "`!s shop 5`\n" +
-          "`!s shop 5 weapon`\n" +
-          "`!s shop 5 equipment`\n" +
-          "`!s shop consumable`"
-      );
-    }
+  if (!request.ok) {
+    return message.reply(request.message || "❌ Invalid shop command.");
   }
+
+  const { requestedLevel, typeFilter } = request;
 
   if (!SHOP_LEVELS.includes(requestedLevel)) {
     return message.reply(
       `❌ Invalid shop level: **${requestedLevel}**\n\n` +
         `Available levels:\n` +
-        `\`${SHOP_LEVELS.join(" ")}\``
+        `\`${getAvailableLevelsText()}\``
     );
   }
 
   const filteredItems = sortShopItems(
-    shopItems.filter(
-      (item) =>
-        Number(item.requiredLevel || 1) === requestedLevel &&
-        canUseItem(player, item) &&
-        matchesTypeFilter(item, typeFilter)
-    )
+    shopItems
+      .map((item) => normalizeShopItem(item))
+      .filter(
+        (item) =>
+          Number(item.requiredLevel || 1) === requestedLevel &&
+          canUseItem(player, item) &&
+          matchesTypeFilter(item, typeFilter)
+      )
   );
 
   if (filteredItems.length === 0) {
@@ -201,34 +338,44 @@ module.exports = async function shopCommand(message, args = []) {
     );
   }
 
-  const itemsText = filteredItems
-    .slice(0, 20)
+  const displayedItems = filteredItems.slice(0, MAX_ITEMS_DISPLAYED);
+  const hiddenCount = Math.max(0, filteredItems.length - displayedItems.length);
+
+  const itemsText = displayedItems
     .map((item) => {
       const icon = item.emoji || "📦";
-      const qualityEmoji = getQualityEmoji(item.quality || "Common");
+      const qualityEmoji = item.qualityEmoji || getQualityEmoji(item.quality || "Common");
 
       return (
-        `${icon} **${item.name}**\n` +
-        `🏷️ ID: \`${item.id}\`\n` +
+        `${icon} **${item.name || "Unknown Item"}**\n` +
+        `🏷️ ID: \`${item.id || "no-id"}\`\n` +
+        `🧬 Base ID: \`${item.baseItemId || item.id || "no-base-id"}\`\n` +
         `${qualityEmoji} ${item.quality || "Common"} • ${item.type || "Unknown"}\n` +
         `🔓 Required: Lv.${item.requiredLevel || 1}\n` +
         `🎭 Class: \`${formatClass(item.compatibleClasses || ["all"])}\`\n` +
         `📊 ${formatStats(item.stats || {})}\n` +
-        `💰 ${item.price || 0} Gold\n`
+        `💰 ${item.price || 0} Gold`
       );
     })
     .join("\n\n");
+
+  const hiddenText =
+    hiddenCount > 0
+      ? `\n\nℹ️ Showing first **${MAX_ITEMS_DISPLAYED}** items only. Hidden: **${hiddenCount}**. Use a narrower filter.`
+      : "";
 
   const embed = new EmbedBuilder()
     .setColor("#8B0000")
     .setTitle(`🏪 SYXTH SHOP • LEVEL ${requestedLevel}`)
     .setDescription(
       `👤 Class: **${player.class || "Unknown"}**\n` +
-        `📈 Your Level: **Lv.${player.level || 1}**\n` +
+        `📈 Your Level: **Lv.${playerLevel}**\n` +
         `🪙 Your Gold: **${player.gold || 0}**\n` +
-        `📂 Filter: **${getTypeLabel(typeFilter)}**\n\n` +
+        `📂 Filter: **${getTypeLabel(typeFilter)}**\n` +
+        `📦 Items Found: **${filteredItems.length}**\n\n` +
         `━━━━━━━━━━━━━━━━━━\n\n` +
-        `${itemsText}\n\n` +
+        `${itemsText}` +
+        `${hiddenText}\n\n` +
         `━━━━━━━━━━━━━━━━━━\n` +
         `🛒 Buy Item:\n` +
         `\`!s buy <item_id> <quantity>\`\n\n` +
@@ -237,7 +384,7 @@ module.exports = async function shopCommand(message, args = []) {
         `\`!s shop 10 equipment\`\n` +
         `\`!s buy archer_iron_weapon 1\`\n\n` +
         `🗂️ Available Shop Levels:\n` +
-        `\`${SHOP_LEVELS.join(" ")}\``
+        `\`${getAvailableLevelsText()}\``
     )
     .setFooter({
       text: "Syxth MMORPG Shop",

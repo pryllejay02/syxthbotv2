@@ -7,8 +7,353 @@ const {
 
 const { db } = require("../../firebase/firebase");
 const { getQualityEmoji } = require("../utils/qualitySystem");
+const balanceConfig = require("../data/balanceConfig");
+const shopItems = require("../data/shopItems");
 
 const ITEMS_PER_PAGE = 8;
+
+function getDefaultStats() {
+  return {
+    attack: 0,
+    defense: 0,
+    maxHp: 0,
+    dodge: 0,
+    crit: 0,
+  };
+}
+
+function normalizeId(value) {
+  return String(value || "").toLowerCase().trim();
+}
+
+function getQuality(item = {}) {
+  const quality = String(item.quality || "Common");
+
+  if (["Starter", "Common", "Rare", "Legendary"].includes(quality)) {
+    return quality;
+  }
+
+  return "Common";
+}
+
+function getSource(item = {}) {
+  return String(item.source || "shop").toLowerCase();
+}
+
+function isStarterItem(item = {}) {
+  return (
+    item.quality === "Starter" ||
+    item.source === "starter" ||
+    item.isStarter === true
+  );
+}
+
+function isConsumable(item = {}) {
+  return String(item.type || "").toLowerCase() === "consumable";
+}
+
+function findBaseShopItem(item = {}) {
+  const candidateIds = [item.baseItemId, item.id]
+    .filter(Boolean)
+    .map(normalizeId);
+
+  for (const candidateId of candidateIds) {
+    const exactMatch = shopItems.find(
+      (shopItem) => normalizeId(shopItem.id) === candidateId
+    );
+
+    if (exactMatch) return exactMatch;
+  }
+
+  const itemId = normalizeId(item.id);
+
+  if (!itemId) return null;
+
+  const prefixMatches = shopItems
+    .filter((shopItem) => itemId.startsWith(normalizeId(shopItem.id)))
+    .sort((a, b) => normalizeId(b.id).length - normalizeId(a.id).length);
+
+  return prefixMatches[0] || null;
+}
+
+function getRollConfigBySource(item = {}, quality = "Common") {
+  const source = getSource(item);
+
+  if (source === "boss_raid") {
+    return balanceConfig.bossDrop?.statRolls?.[quality] || null;
+  }
+
+  if (source === "monster_drop") {
+    return balanceConfig.monsterDrop?.statRolls?.[quality] || null;
+  }
+
+  if (source === "admin_generated" || source === "admin") {
+    return balanceConfig.adminItem?.statRolls?.[quality] || null;
+  }
+
+  return null;
+}
+
+function getDeterministicMultiplier(item = {}, quality = "Common") {
+  if (quality === "Starter") return 0;
+
+  const source = getSource(item);
+
+  if (!source || source === "shop") {
+    return Number(balanceConfig.quality?.[quality]?.statMultiplier || 1);
+  }
+
+  const rollConfig = getRollConfigBySource(item, quality);
+
+  if (rollConfig) {
+    const min = Number(rollConfig.min || 1);
+    const max = Number(rollConfig.max || min);
+
+    return Number(((min + max) / 2).toFixed(3));
+  }
+
+  return Number(balanceConfig.quality?.[quality]?.statMultiplier || 1);
+}
+
+function getPriceMultiplierBySource(item = {}, quality = "Common") {
+  const source = getSource(item);
+
+  if (source === "boss_raid") {
+    return Number(balanceConfig.bossDrop?.priceMultiplier?.[quality] || 1);
+  }
+
+  if (source === "monster_drop") {
+    return Number(balanceConfig.monsterDrop?.priceMultiplier?.[quality] || 1);
+  }
+
+  if (source === "admin_generated" || source === "admin") {
+    return Number(
+      balanceConfig.adminItem?.priceMultiplier?.[quality] ||
+        balanceConfig.quality?.[quality]?.priceMultiplier ||
+        1
+    );
+  }
+
+  return Number(balanceConfig.quality?.[quality]?.priceMultiplier || 1);
+}
+
+function capPercentStat(statName, value, quality = "Common", source = "shop") {
+  const statValue = Number(value || 0);
+
+  if (typeof balanceConfig.capItemPercentStat === "function") {
+    return balanceConfig.capItemPercentStat(
+      statName,
+      statValue,
+      quality,
+      source
+    );
+  }
+
+  let cap = Number(balanceConfig.item?.statCaps?.[statName] || 0);
+
+  if (source === "monster_drop") {
+    cap = Number(
+      balanceConfig.monsterDrop?.statCaps?.[quality]?.[statName] || cap
+    );
+  }
+
+  if (source === "boss_raid") {
+    cap = Number(
+      balanceConfig.bossDrop?.statCaps?.[quality]?.[statName] || cap
+    );
+  }
+
+  if (source === "admin_generated" || source === "admin") {
+    if (quality === "Rare") {
+      cap = Number(
+        balanceConfig.monsterDrop?.statCaps?.Rare?.[statName] || cap
+      );
+    }
+
+    if (quality === "Legendary") {
+      cap = Number(
+        balanceConfig.bossDrop?.statCaps?.Legendary?.[statName] || cap
+      );
+    }
+  }
+
+  if (!cap) return statValue;
+
+  return Math.min(statValue, cap);
+}
+
+function scaleStats(
+  stats = {},
+  multiplier = 1,
+  quality = "Common",
+  source = "shop"
+) {
+  const attack = Math.floor(Number(stats.attack || 0) * multiplier);
+  const defense = Math.floor(Number(stats.defense || 0) * multiplier);
+  const maxHp = Math.floor(Number(stats.maxHp || 0) * multiplier);
+
+  const dodge = capPercentStat(
+    "dodge",
+    Number((Number(stats.dodge || 0) * multiplier).toFixed(1)),
+    quality,
+    source
+  );
+
+  const crit = capPercentStat(
+    "crit",
+    Number((Number(stats.crit || 0) * multiplier).toFixed(1)),
+    quality,
+    source
+  );
+
+  return {
+    attack,
+    defense,
+    maxHp,
+    dodge,
+    crit,
+  };
+}
+
+function normalizeFallbackStats(item = {}) {
+  const quality = getQuality(item);
+  const source = getSource(item);
+
+  return {
+    attack: Math.floor(Number(item.stats?.attack || 0)),
+    defense: Math.floor(Number(item.stats?.defense || 0)),
+    maxHp: Math.floor(Number(item.stats?.maxHp || 0)),
+    dodge: capPercentStat(
+      "dodge",
+      Number(item.stats?.dodge || 0),
+      quality,
+      source
+    ),
+    crit: capPercentStat(
+      "crit",
+      Number(item.stats?.crit || 0),
+      quality,
+      source
+    ),
+  };
+}
+
+function getCleanItemName(baseName = "Unknown Item", quality = "Common") {
+  const cleanBaseName = String(baseName || "Unknown Item").replace(
+    /^(Common|Rare|Legendary|Starter)\s+/i,
+    ""
+  );
+
+  if (quality === "Starter") {
+    return cleanBaseName;
+  }
+
+  return `${quality} ${cleanBaseName}`;
+}
+
+function makeDescription(stats = {}) {
+  const parts = [];
+
+  if (stats.attack) parts.push(`+${stats.attack} ATK`);
+  if (stats.defense) parts.push(`+${stats.defense} DEF`);
+  if (stats.maxHp) parts.push(`+${stats.maxHp} HP`);
+  if (stats.dodge) parts.push(`+${stats.dodge}% Dodge`);
+  if (stats.crit) parts.push(`+${stats.crit}% Crit`);
+
+  return parts.length ? parts.join(", ") : "No bonus stats";
+}
+
+function rebalanceItemStats(item = {}) {
+  if (!item) return null;
+
+  const quality = getQuality(item);
+  const source = getSource(item);
+
+  if (isStarterItem(item)) {
+    return {
+      ...item,
+      quality: "Starter",
+      qualityEmoji: "🌱",
+      price: 0,
+      source: "starter",
+      isStarter: true,
+      quantity: Math.max(1, Number(item.quantity || 1)),
+      stats: getDefaultStats(),
+      description: item.description || "Starter weapon.",
+    };
+  }
+
+  if (isConsumable(item)) {
+    return {
+      ...item,
+      quality,
+      qualityEmoji: item.qualityEmoji || getQualityEmoji(quality),
+      quantity: Math.max(1, Number(item.quantity || 1)),
+      stats: item.stats || getDefaultStats(),
+      healPercent: Number(item.healPercent || 0),
+      healAmount: Number(item.healAmount || item.heal || 0),
+    };
+  }
+
+  const baseItem = findBaseShopItem(item);
+
+  if (!baseItem) {
+    const fallbackStats = normalizeFallbackStats(item);
+
+    return {
+      ...item,
+      quality,
+      qualityEmoji: item.qualityEmoji || getQualityEmoji(quality),
+      quantity: Math.max(1, Number(item.quantity || 1)),
+      stats: fallbackStats,
+      description: makeDescription(fallbackStats),
+    };
+  }
+
+  const multiplier = getDeterministicMultiplier(item, quality);
+
+  const rebalancedStats = scaleStats(
+    baseItem.stats || getDefaultStats(),
+    multiplier,
+    quality,
+    source
+  );
+
+  const priceMultiplier = getPriceMultiplierBySource(item, quality);
+
+  return {
+    ...item,
+    id: item.id || baseItem.id,
+    baseItemId: baseItem.id,
+    name:
+      source === "shop"
+        ? baseItem.name
+        : getCleanItemName(baseItem.name, quality),
+    type: baseItem.type || item.type || "Unknown",
+    quality,
+    qualityEmoji: getQualityEmoji(quality),
+    requiredLevel: Number(baseItem.requiredLevel || item.requiredLevel || 1),
+    compatibleClasses:
+      baseItem.compatibleClasses || item.compatibleClasses || ["all"],
+    price: Math.floor(
+      Number(baseItem.price || item.price || 0) * priceMultiplier
+    ),
+    description: makeDescription(rebalancedStats),
+    stats: rebalancedStats,
+    emoji: baseItem.emoji || item.emoji || "📦",
+    quantity: Math.max(1, Number(item.quantity || 1)),
+    source,
+  };
+}
+
+function normalizeInventory(inventory = []) {
+  if (!Array.isArray(inventory)) return [];
+
+  return inventory
+    .filter(Boolean)
+    .map((item) => rebalanceItemStats(item))
+    .filter(Boolean);
+}
 
 function getItemEmoji(item = {}) {
   if (item.emoji) return item.emoji;
@@ -203,7 +548,8 @@ module.exports = async function inventoryCommand(message, args = []) {
     ? player.inventory
     : [];
 
-  const filtered = filterInventory(rawInventory, filter);
+  const rebalancedInventory = normalizeInventory(rawInventory);
+  const filtered = filterInventory(rebalancedInventory, filter);
 
   if (!filtered) {
     return message.reply("❌ Invalid inventory filter.");
@@ -220,7 +566,7 @@ module.exports = async function inventoryCommand(message, args = []) {
 
   const filterLabel = getFilterLabel(filter);
   const totalQuantity = getTotalQuantity(inventory);
-  const allQuantity = getTotalQuantity(rawInventory);
+  const allQuantity = getTotalQuantity(rebalancedInventory);
 
   function createEmbed(page) {
     const start = page * ITEMS_PER_PAGE;
@@ -258,7 +604,7 @@ module.exports = async function inventoryCommand(message, args = []) {
           `🎭 Class: **${player.class || "Unknown"}**\n` +
           `🪙 Gold: **${player.gold || 0}**\n` +
           `📦 Showing: **${inventory.length} stacks / ${totalQuantity} total items**\n` +
-          `🎒 Full Inventory: **${rawInventory.length} stacks / ${allQuantity} total items**\n\n` +
+          `🎒 Full Inventory: **${rebalancedInventory.length} stacks / ${allQuantity} total items**\n\n` +
           `━━━━━━━━━━━━━━━━━━\n\n` +
           itemsText
       )

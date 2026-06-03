@@ -13,6 +13,9 @@ const {
   generateMonsterPetDrop,
   addPetToPets,
   formatDroppedPet,
+  getPetMaxLevel,
+  getPetRequiredExp,
+  getPetExpDisplay,
 } = require("../utils/petSystem");
 
 function getNormalReviveSeconds() {
@@ -511,6 +514,79 @@ function formatDroppedItem(droppedItem) {
   );
 }
 
+function makeProgressBar(current, required, size = 10) {
+  const safeCurrent = Math.max(0, Number(current || 0));
+  const safeRequired = Math.max(1, Number(required || 1));
+
+  const percent = Math.max(
+    0,
+    Math.min(1, safeCurrent / safeRequired)
+  );
+
+  const filled = Math.round(percent * size);
+  const empty = Math.max(0, size - filled);
+
+  return "▰".repeat(filled) + "▱".repeat(empty);
+}
+
+function getPetExpDisplaySafe(pet = {}) {
+  if (typeof getPetExpDisplay === "function") {
+    return getPetExpDisplay(pet);
+  }
+
+  const level = Math.max(1, Number(pet.level || 1));
+  const maxLevel = getPetMaxLevel(pet);
+
+  if (level >= maxLevel) {
+    return "MAX";
+  }
+
+  const nextLevelExp =
+    Number(pet.nextLevelExp || 0) || getPetRequiredExp(level);
+
+  return `${Math.max(0, Number(pet.exp || 0))}/${nextLevelExp}`;
+}
+
+function formatPetExpReward(petExpResult) {
+  if (!petExpResult?.activePet) {
+    return "";
+  }
+
+  const gainedExp = Number(petExpResult.gainedExp || 0);
+
+  if (gainedExp <= 0) {
+    return "";
+  }
+
+  const pet = petExpResult.activePet;
+  const level = Math.max(1, Number(pet.level || 1));
+  const maxLevel = getPetMaxLevel(pet);
+  const currentExp = Math.max(0, Number(pet.exp || 0));
+  const nextLevelExp =
+    Number(pet.nextLevelExp || 0) || getPetRequiredExp(level);
+
+  const isMaxLevel = level >= maxLevel;
+
+  const progressBar = isMaxLevel
+    ? "▰▰▰▰▰▰▰▰▰▰"
+    : makeProgressBar(currentExp, nextLevelExp);
+
+  let text =
+    `\n🐾 **PET EXP GAINED**\n` +
+    `${pet.emoji || "🐾"} **${pet.name || "Unknown Pet"}** gained **+${gainedExp} EXP**\n` +
+    `📈 Level: **Lv.${level}/${maxLevel}**\n` +
+    `⭐ EXP: **${getPetExpDisplaySafe(pet)}**\n` +
+    `${progressBar}`;
+
+  if (petExpResult.leveledUp) {
+    text +=
+      `\n🔥 **PET LEVEL UP!** ` +
+      `${pet.emoji || "🐾"} **${pet.name || "Unknown Pet"}** is now **Lv.${level}**.`;
+  }
+
+  return text;
+}
+
 module.exports = async function hitCommand(message) {
   const userId = message.author.id;
 
@@ -842,20 +918,7 @@ module.exports = async function hitCommand(message) {
       reply += formatDroppedPet(result.droppedPet);
     }
 
-    if (result.petExpResult?.activePet && result.petExpResult.gainedExp > 0) {
-      reply +=
-        `\n🐾 **Pet EXP:** ${result.petExpResult.activePet.emoji || "🐾"} ` +
-        `**${result.petExpResult.activePet.name}** gained ` +
-        `**${result.petExpResult.gainedExp} EXP**.`;
-
-      if (result.petExpResult.leveledUp) {
-        reply +=
-          `\n🔥 **PET LEVEL UP!** ` +
-          `${result.petExpResult.activePet.emoji || "🐾"} ` +
-          `**${result.petExpResult.activePet.name}** is now ` +
-          `**Lv.${result.petExpResult.activePet.level}**.`;
-      }
-    }
+    reply += formatPetExpReward(result.petExpResult);
 
     if (result.levelResult.leveledUp) {
       reply += `\n🔥 **LEVEL UP!**\n`;

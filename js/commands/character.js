@@ -8,6 +8,15 @@ const {
 } = require("../utils/reviveSystem");
 
 const { calculateTotalStats } = require("../utils/statSystem");
+
+const {
+  getActivePet,
+  applyPetStats,
+  calculatePetStats,
+  getPetMaxLevel,
+  getPetRequiredExp,
+} = require("../utils/petSystem");
+
 const balanceConfig = require("../data/balanceConfig");
 const shopItems = require("../data/shopItems");
 
@@ -521,7 +530,16 @@ function getRebalancedPlayer(player = {}) {
   });
 
   const inventory = normalizeInventory(player.inventory || []);
-  const totalStats = calculateTotalStats(baseStats, equipment);
+
+  const equipmentStats = calculateTotalStats(baseStats, equipment);
+
+  const activePet = getActivePet({
+    ...player,
+    pets: player.pets || [],
+    activePetId: player.activePetId || null,
+  });
+
+  const totalStats = applyPetStats(equipmentStats, activePet);
 
   const hp = Math.min(
     Math.max(0, Number(player.hp ?? totalStats.maxHp)),
@@ -537,6 +555,10 @@ function getRebalancedPlayer(player = {}) {
     baseStats,
     equipment,
     inventory,
+
+    pets: player.pets || [],
+    activePetId: player.activePetId || null,
+    activePet,
 
     hp,
     maxHp: totalStats.maxHp,
@@ -578,6 +600,18 @@ function formatStats(stats = {}) {
   return parts.length ? parts.join(" • ") : "No bonus stats";
 }
 
+function formatPetStats(stats = {}) {
+  const parts = [];
+
+  if (stats.attack) parts.push(`⚔️ ATK +${stats.attack}`);
+  if (stats.defense) parts.push(`🛡️ DEF +${stats.defense}`);
+  if (stats.maxHp) parts.push(`❤️ HP +${stats.maxHp}`);
+  if (stats.dodge) parts.push(`💨 Dodge +${stats.dodge}%`);
+  if (stats.crit) parts.push(`💥 Crit +${stats.crit}%`);
+
+  return parts.length ? parts.join(" • ") : "No pet bonus stats";
+}
+
 function formatClass(classes = []) {
   if (!Array.isArray(classes)) return "All";
 
@@ -609,6 +643,33 @@ function showEquipment(item, emptyText) {
     `└ 🎭 ${formatClass(item.compatibleClasses || ["all"])}\n` +
     `└ 📊 ${formatStats(item.stats || {})}\n` +
     `└ 🏷️ ID: \`${item.id || "no-id"}\``
+  );
+}
+
+function showActivePet(player = {}) {
+  const activePet = player.activePet;
+
+  if (!activePet) {
+    return (
+      `*No active pet*\n` +
+      `└ Use \`!s pet list\` to view pets\n` +
+      `└ Use \`!s pet equip <pet_id>\` to activate a pet`
+    );
+  }
+
+  const petStats = calculatePetStats(activePet);
+  const maxLevel = getPetMaxLevel(activePet);
+  const requiredExp = getPetRequiredExp(activePet.level || 1);
+
+  return (
+    `${activePet.emoji || "🐾"} **${activePet.name || "Unknown Pet"}**\n` +
+    `└ ${activePet.qualityEmoji || ""} ${activePet.quality || "Common"} • ${String(
+      activePet.type || "balanced"
+    ).toUpperCase()}\n` +
+    `└ 📈 Lv.${activePet.level || 1}/${maxLevel}\n` +
+    `└ ⭐ EXP ${activePet.exp || 0}/${requiredExp}\n` +
+    `└ 📊 ${formatPetStats(petStats)}\n` +
+    `└ 🏷️ ID: \`${activePet.id || "no-id"}\``
   );
 }
 
@@ -650,6 +711,17 @@ function shouldPersistRebalancedPlayer(oldPlayer = {}, newPlayer = {}) {
     return true;
   }
 
+  if (
+    JSON.stringify(oldPlayer.pets || []) !==
+    JSON.stringify(newPlayer.pets || [])
+  ) {
+    return true;
+  }
+
+  if ((oldPlayer.activePetId || null) !== (newPlayer.activePetId || null)) {
+    return true;
+  }
+
   return false;
 }
 
@@ -665,6 +737,9 @@ async function persistRebalancedPlayer(playerRef, oldPlayer, rebalancedPlayer) {
     baseStats: rebalancedPlayer.baseStats,
     equipment: rebalancedPlayer.equipment,
     inventory: rebalancedPlayer.inventory,
+
+    pets: rebalancedPlayer.pets || [],
+    activePetId: rebalancedPlayer.activePetId || null,
 
     hp: rebalancedPlayer.hp,
     maxHp: rebalancedPlayer.maxHp,
@@ -717,6 +792,10 @@ module.exports = async function characterCommand(message) {
   const gold = Number(rebalancedPlayer.gold || 0);
   const level = Number(rebalancedPlayer.level || 1);
 
+  const pets = Array.isArray(rebalancedPlayer.pets)
+    ? rebalancedPlayer.pets
+    : [];
+
   const equipment = rebalancedPlayer.equipment || getDefaultEquipment();
   const power = calculatePower(rebalancedPlayer);
   const equippedCount = countEquippedItems(equipment);
@@ -752,12 +831,15 @@ module.exports = async function characterCommand(message) {
         `⚡ Power: **${power}**\n` +
         `🪙 Gold: **${gold}**\n` +
         `🎒 Equipped: **${equippedCount}/6**\n` +
+        `🐾 Pets Owned: **${pets.length}**\n` +
         `✨ Revive: **${reviveText}**\n\n` +
         `❤️ HP: **${hp}/${maxHp}**\n` +
         `⚔️ Attack: **${attack}**\n` +
         `🛡️ Defense: **${defense}**\n` +
         `💨 Dodge: **${dodge.toFixed(1)}%**\n` +
         `💥 Crit: **${crit.toFixed(1)}%**\n\n` +
+        `━━━━━━━━━━━━━━━━━━\n\n` +
+        `🐾 **Active Pet**\n${showActivePet(rebalancedPlayer)}\n\n` +
         `━━━━━━━━━━━━━━━━━━\n\n` +
         `🗡️ **Weapon**\n${showEquipment(equipment.weapon, "Weapon")}\n\n` +
         `⛑️ **Helmet**\n${showEquipment(equipment.helmet, "Helmet")}\n\n` +
@@ -768,6 +850,7 @@ module.exports = async function characterCommand(message) {
         `━━━━━━━━━━━━━━━━━━\n` +
         `Equip: \`!s equip <item_id>\`\n` +
         `Unequip: \`!s unequip <slot>\`\n` +
+        `Pet: \`!s pet\` / \`!s pet list\`\n` +
         `Slots: \`weapon\`, \`helmet\`, \`armor\`, \`gloves\`, \`pants\`, \`boots\``
     )
     .setThumbnail(

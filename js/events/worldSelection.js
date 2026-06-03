@@ -238,6 +238,9 @@ function buildNewPlayer({
     inventory: [],
     equipment: buildStarterEquipment(selectedClass, starterWeapon),
 
+    pets: [],
+    activePetId: null,
+
     baseStats,
 
     world: {
@@ -262,6 +265,7 @@ function buildNewPlayer({
 module.exports = async function worldSelection(interaction) {
   try {
     if (!interaction.isStringSelectMenu()) return;
+
     if (!interaction.guild) {
       return interaction.reply({
         content: "❌ Character creation must be done inside the server.",
@@ -441,6 +445,7 @@ module.exports = async function worldSelection(interaction) {
           `💨 Dodge: **${newPlayer.dodge}%**\n` +
           `💥 Crit: **${newPlayer.crit}%**\n` +
           `🪙 Gold: **${newPlayer.gold}**\n\n` +
+          `🐾 Pets: **0**\n` +
           `🏠 Private Room: <#${playerRoom.id}>\n\n` +
           `Only you and the bot can access this room.`,
         components: [],

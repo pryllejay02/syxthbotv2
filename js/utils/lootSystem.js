@@ -2,11 +2,19 @@ const shopItems = require("../data/shopItems");
 const { getQualityEmoji } = require("./qualitySystem");
 const balanceConfig = require("../data/balanceConfig");
 
+const VALID_DROP_QUALITIES = ["Common", "Rare"];
+
 const DROP_RATES = balanceConfig.monsterDrop?.rates || {
   rare: 8,
   common: 32,
   none: 60,
 };
+
+function normalizeQuality(quality = "Common") {
+  const normalized = String(quality || "Common");
+
+  return VALID_DROP_QUALITIES.includes(normalized) ? normalized : "Common";
+}
 
 function rollDropQuality() {
   const chance = Math.random() * 100;
@@ -55,8 +63,10 @@ function getNearestItemLevel(monsterLevel) {
 }
 
 function getRollMultiplier(quality = "Common") {
+  const normalizedQuality = normalizeQuality(quality);
+
   const rollConfig =
-    balanceConfig.monsterDrop?.statRolls?.[quality] ||
+    balanceConfig.monsterDrop?.statRolls?.[normalizedQuality] ||
     balanceConfig.monsterDrop?.statRolls?.Common ||
     {
       min: 1,
@@ -76,19 +86,20 @@ function getRollMultiplier(quality = "Common") {
 }
 
 function capPercentStat(statName, value, quality = "Common") {
+  const normalizedQuality = normalizeQuality(quality);
   const statValue = Number(value || 0);
 
   if (typeof balanceConfig.capItemPercentStat === "function") {
     return balanceConfig.capItemPercentStat(
       statName,
       statValue,
-      quality,
+      normalizedQuality,
       "monster_drop"
     );
   }
 
   const monsterCap = Number(
-    balanceConfig.monsterDrop?.statCaps?.[quality]?.[statName] || 0
+    balanceConfig.monsterDrop?.statCaps?.[normalizedQuality]?.[statName] || 0
   );
 
   const shopCap = Number(
@@ -103,7 +114,8 @@ function capPercentStat(statName, value, quality = "Common") {
 }
 
 function scaleStatsByQuality(stats = {}, quality = "Common") {
-  const multiplier = getRollMultiplier(quality);
+  const normalizedQuality = normalizeQuality(quality);
+  const multiplier = getRollMultiplier(normalizedQuality);
 
   const attack = Math.floor(Number(stats.attack || 0) * multiplier);
   const defense = Math.floor(Number(stats.defense || 0) * multiplier);
@@ -112,13 +124,13 @@ function scaleStatsByQuality(stats = {}, quality = "Common") {
   const dodge = capPercentStat(
     "dodge",
     Number((Number(stats.dodge || 0) * multiplier).toFixed(1)),
-    quality
+    normalizedQuality
   );
 
   const crit = capPercentStat(
     "crit",
     Number((Number(stats.crit || 0) * multiplier).toFixed(1)),
-    quality
+    normalizedQuality
   );
 
   return {
@@ -143,18 +155,22 @@ function makeDescription(stats = {}) {
 }
 
 function getPriceMultiplier(quality = "Common") {
+  const normalizedQuality = normalizeQuality(quality);
+
   return Number(
-    balanceConfig.monsterDrop?.priceMultiplier?.[quality] || 1
+    balanceConfig.monsterDrop?.priceMultiplier?.[normalizedQuality] || 1
   );
 }
 
 function cleanItemName(name, quality) {
+  const normalizedQuality = normalizeQuality(quality);
+
   const baseName = String(name || "Unknown Item").replace(
     /^(Common|Rare|Legendary|Starter)\s+/i,
     ""
   );
 
-  return `${quality} ${baseName}`;
+  return `${normalizedQuality} ${baseName}`;
 }
 
 function getPossibleDropItems(itemLevel) {
@@ -181,6 +197,7 @@ function generateMonsterDrop(monsterLevel) {
     return null;
   }
 
+  const normalizedQuality = normalizeQuality(quality);
   const itemLevel = getNearestItemLevel(level);
   const possibleItems = getPossibleDropItems(itemLevel);
 
@@ -191,27 +208,27 @@ function generateMonsterDrop(monsterLevel) {
   const baseItem =
     possibleItems[Math.floor(Math.random() * possibleItems.length)];
 
-  const stats = scaleStatsByQuality(baseItem.stats || {}, quality);
-  const qualityEmoji = getQualityEmoji(quality);
+  const stats = scaleStatsByQuality(baseItem.stats || {}, normalizedQuality);
+  const qualityEmoji = getQualityEmoji(normalizedQuality);
 
   return {
     ...baseItem,
 
-    id: `${baseItem.id}_${quality.toLowerCase()}_${Date.now()}_${Math.floor(
+    id: `${baseItem.id}_${normalizedQuality.toLowerCase()}_monster_${Date.now()}_${Math.floor(
       Math.random() * 99999
     )}`,
 
     baseItemId: baseItem.baseItemId || baseItem.id,
-    name: cleanItemName(baseItem.name, quality),
+    name: cleanItemName(baseItem.name, normalizedQuality),
 
-    quality,
+    quality: normalizedQuality,
     qualityEmoji,
 
     requiredLevel: itemLevel,
     compatibleClasses: baseItem.compatibleClasses || ["all"],
 
     price: Math.floor(
-      Number(baseItem.price || 0) * getPriceMultiplier(quality)
+      Number(baseItem.price || 0) * getPriceMultiplier(normalizedQuality)
     ),
 
     description: makeDescription(stats),
@@ -226,14 +243,17 @@ function generateMonsterDrop(monsterLevel) {
 function addItemToInventory(inventory = [], droppedItem) {
   if (!droppedItem) return inventory;
 
-  const existingItemIndex = inventory.findIndex(
-    (item) =>
+  const existingItemIndex = inventory.findIndex((item) => {
+    if (!item) return false;
+
+    return (
       item.baseItemId === droppedItem.baseItemId &&
       item.quality === droppedItem.quality &&
       item.source === droppedItem.source &&
       JSON.stringify(item.stats || {}) ===
         JSON.stringify(droppedItem.stats || {})
-  );
+    );
+  });
 
   if (existingItemIndex !== -1) {
     inventory[existingItemIndex].quantity =
@@ -249,10 +269,16 @@ function addItemToInventory(inventory = [], droppedItem) {
 }
 
 module.exports = {
+  VALID_DROP_QUALITIES,
   DROP_RATES,
+
+  normalizeQuality,
   rollDropQuality,
   getNearestItemLevel,
+  getRollMultiplier,
+  capPercentStat,
   scaleStatsByQuality,
+
   generateMonsterDrop,
   addItemToInventory,
 };

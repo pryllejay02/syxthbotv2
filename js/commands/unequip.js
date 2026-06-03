@@ -4,6 +4,11 @@ const { getQualityEmoji } = require("../utils/qualitySystem");
 const balanceConfig = require("../data/balanceConfig");
 const shopItems = require("../data/shopItems");
 
+const {
+  getActivePet,
+  applyPetStats,
+} = require("../utils/petSystem");
+
 const EQUIPMENT_SLOTS = [
   "weapon",
   "helmet",
@@ -514,6 +519,13 @@ function getBaseStats(player) {
   };
 }
 
+function getFinalStats(baseStats, equipment, player = {}) {
+  const equipmentStats = calculateTotalStats(baseStats, equipment);
+  const activePet = getActivePet(player);
+
+  return applyPetStats(equipmentStats, activePet);
+}
+
 function shouldReturnItemToInventory(item) {
   if (!item) return false;
   if (isStarterItem(item)) return false;
@@ -640,13 +652,22 @@ module.exports = async function unequipCommand(message, args = []) {
       classId,
     });
 
-    const totalStats = calculateTotalStats(baseStats, equipment);
+    const petAwarePlayer = {
+      ...player,
+      pets: player.pets || [],
+      activePetId: player.activePetId || null,
+    };
+
+    const totalStats = getFinalStats(baseStats, equipment, petAwarePlayer);
     const newHp = getHpAfterUnequip(player, totalStats);
 
     transaction.update(playerRef, {
       baseStats,
       equipment,
       inventory,
+
+      pets: player.pets || [],
+      activePetId: player.activePetId || null,
 
       attack: totalStats.attack,
       defense: totalStats.defense,

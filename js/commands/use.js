@@ -4,6 +4,11 @@ const shopItems = require("../data/shopItems");
 const { getQualityEmoji } = require("../utils/qualitySystem");
 const { calculateTotalStats } = require("../utils/statSystem");
 
+const {
+  getActivePet,
+  applyPetStats,
+} = require("../utils/petSystem");
+
 const EQUIPMENT_SLOTS = [
   "weapon",
   "helmet",
@@ -252,12 +257,14 @@ function scaleStats(
     attack: Math.floor(Number(stats.attack || 0) * multiplier),
     defense: Math.floor(Number(stats.defense || 0) * multiplier),
     maxHp: Math.floor(Number(stats.maxHp || 0) * multiplier),
+
     dodge: capPercentStat(
       "dodge",
       Number((Number(stats.dodge || 0) * multiplier).toFixed(1)),
       quality,
       source
     ),
+
     crit: capPercentStat(
       "crit",
       Number((Number(stats.crit || 0) * multiplier).toFixed(1)),
@@ -275,12 +282,14 @@ function normalizeFallbackStats(item = {}) {
     attack: Math.floor(Number(item.stats?.attack || 0)),
     defense: Math.floor(Number(item.stats?.defense || 0)),
     maxHp: Math.floor(Number(item.stats?.maxHp || 0)),
+
     dodge: capPercentStat(
       "dodge",
       Number(item.stats?.dodge || 0),
       quality,
       source
     ),
+
     crit: capPercentStat(
       "crit",
       Number(item.stats?.crit || 0),
@@ -341,20 +350,32 @@ function rebalanceItemStats(item = {}) {
 
     return {
       ...item,
+
       id: item.id || sourceItem.id,
       baseItemId: sourceItem.baseItemId || sourceItem.id || item.baseItemId,
+
       name: sourceItem.name || item.name || "Unknown Consumable",
       type: sourceItem.type || item.type || "Consumable",
+
       quality,
       qualityEmoji: item.qualityEmoji || getQualityEmoji(quality),
+
       requiredLevel: Number(sourceItem.requiredLevel || item.requiredLevel || 1),
       compatibleClasses:
         sourceItem.compatibleClasses || item.compatibleClasses || ["all"],
-      price: Number(sourceItem.price || item.price || 0),
+
+      price: Math.max(
+        0,
+        Math.floor(Number(sourceItem.price || item.price || 0))
+      ),
+
       description:
         sourceItem.description || item.description || "Consumable item.",
+
       quantity: Math.max(1, Number(item.quantity || 1)),
+
       stats: getDefaultStats(),
+
       healPercent: Number(sourceItem.healPercent || item.healPercent || 0),
       healAmount: Number(
         sourceItem.healAmount ||
@@ -363,6 +384,7 @@ function rebalanceItemStats(item = {}) {
           item.heal ||
           0
       ),
+
       source: item.source || "shop",
       emoji: sourceItem.emoji || item.emoji || "🧪",
     };
@@ -394,24 +416,34 @@ function rebalanceItemStats(item = {}) {
 
   return {
     ...item,
+
     id: item.id || baseItem.id,
     baseItemId: baseItem.id,
+
     name:
       source === "shop"
         ? baseItem.name
         : getCleanItemName(baseItem.name, quality),
+
     type: baseItem.type || item.type || "Unknown",
+
     quality,
     qualityEmoji: getQualityEmoji(quality),
+
     requiredLevel: Number(baseItem.requiredLevel || item.requiredLevel || 1),
     compatibleClasses:
       baseItem.compatibleClasses || item.compatibleClasses || ["all"],
+
     price: Math.floor(
       Number(baseItem.price || item.price || 0) * priceMultiplier
     ),
+
     description: makeDescription(rebalancedStats),
+
     stats: rebalancedStats,
+
     emoji: baseItem.emoji || item.emoji || "📦",
+
     quantity: Math.max(1, Number(item.quantity || 1)),
     source,
   };
@@ -486,7 +518,15 @@ function getRebalancedPlayerData(player = {}) {
   });
 
   const inventory = normalizeInventory(player.inventory || []);
-  const totalStats = calculateTotalStats(baseStats, equipment);
+
+  const equipmentStats = calculateTotalStats(baseStats, equipment);
+  const activePet = getActivePet({
+    ...player,
+    pets: player.pets || [],
+    activePetId: player.activePetId || null,
+  });
+
+  const totalStats = applyPetStats(equipmentStats, activePet);
 
   const hp = Math.min(
     Math.max(0, Number(player.hp ?? totalStats.maxHp)),
@@ -513,14 +553,20 @@ function getBaseUpdatePayload(player = {}, rebalanced = {}) {
     classId,
     baseStats: rebalanced.baseStats,
     equipment: rebalanced.equipment,
+
+    pets: player.pets || [],
+    activePetId: player.activePetId || null,
+
     maxHp: rebalanced.totalStats.maxHp,
     attack: rebalanced.totalStats.attack,
     defense: rebalanced.totalStats.defense,
     dodge: rebalanced.totalStats.dodge,
     crit: rebalanced.totalStats.crit,
+
     weapon:
       rebalanced.equipment?.weapon?.name ||
       getStarterWeaponByClass(classId).name,
+
     updatedAt: new Date(),
   };
 }

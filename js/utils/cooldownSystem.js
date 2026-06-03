@@ -1,12 +1,25 @@
 const cooldowns = new Map();
 
+function normalizeId(value, fallback = "unknown") {
+  return String(value || fallback).trim();
+}
+
+function normalizeAction(action = "default") {
+  return String(action || "default").toLowerCase().trim();
+}
+
 function getKey(userId, action) {
-  return `${String(userId || "unknown")}:${String(action || "default")}`;
+  return `${normalizeId(userId)}:${normalizeAction(action)}`;
 }
 
 function formatCooldown(ms) {
   const totalMs = Math.max(0, Number(ms || 0));
-  const seconds = Math.max(1, Math.ceil(totalMs / 1000));
+
+  if (totalMs <= 0) {
+    return "0s";
+  }
+
+  const seconds = Math.ceil(totalMs / 1000);
 
   if (seconds < 60) {
     return `${seconds}s`;
@@ -23,7 +36,7 @@ function formatCooldown(ms) {
 }
 
 function checkCooldown(userId, action, cooldownMs) {
-  const duration = Number(cooldownMs || 0);
+  const duration = Math.max(0, Number(cooldownMs || 0));
 
   if (!userId || !action || duration <= 0) {
     return {
@@ -64,28 +77,6 @@ function checkCooldown(userId, action, cooldownMs) {
   };
 }
 
-function clearCooldown(userId, action) {
-  if (!userId || !action) return false;
-
-  return cooldowns.delete(getKey(userId, action));
-}
-
-function clearUserCooldowns(userId) {
-  if (!userId) return 0;
-
-  let cleared = 0;
-  const prefix = `${String(userId)}:`;
-
-  for (const key of cooldowns.keys()) {
-    if (key.startsWith(prefix)) {
-      cooldowns.delete(key);
-      cleared++;
-    }
-  }
-
-  return cleared;
-}
-
 function getCooldown(userId, action) {
   if (!userId || !action) {
     return {
@@ -103,14 +94,36 @@ function getCooldown(userId, action) {
   return {
     active: remainingMs > 0,
     remainingMs,
-    availableAt,
+    availableAt: remainingMs > 0 ? availableAt : now,
   };
+}
+
+function clearCooldown(userId, action) {
+  if (!userId || !action) return false;
+
+  return cooldowns.delete(getKey(userId, action));
+}
+
+function clearUserCooldowns(userId) {
+  if (!userId) return 0;
+
+  let cleared = 0;
+  const prefix = `${normalizeId(userId)}:`;
+
+  for (const key of cooldowns.keys()) {
+    if (key.startsWith(prefix)) {
+      cooldowns.delete(key);
+      cleared++;
+    }
+  }
+
+  return cleared;
 }
 
 module.exports = {
   checkCooldown,
+  getCooldown,
   clearCooldown,
   clearUserCooldowns,
-  getCooldown,
   formatCooldown,
 };

@@ -28,7 +28,7 @@ module.exports = async function adminCommand(message, args = []) {
     return adminHelp(message);
   }
 
-  if (["giveitem", "givebossitem"].includes(subCommand)) {
+  if (["giveitem", "givebossitem", "givepet"].includes(subCommand)) {
     return adminItems(message, args);
   }
 

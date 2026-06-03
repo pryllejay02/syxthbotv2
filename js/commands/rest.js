@@ -5,6 +5,11 @@ const { getQualityEmoji } = require("../utils/qualitySystem");
 const { calculateTotalStats } = require("../utils/statSystem");
 
 const {
+  getActivePet,
+  applyPetStats,
+} = require("../utils/petSystem");
+
+const {
   getReadyReviveField,
   getReviveRemainingSeconds,
   getReviveTypeFromField,
@@ -367,8 +372,12 @@ function rebalanceItemStats(item = {}) {
       requiredLevel: Number(sourceItem.requiredLevel || item.requiredLevel || 1),
       compatibleClasses:
         sourceItem.compatibleClasses || item.compatibleClasses || ["all"],
-      price: Number(sourceItem.price || item.price || 0),
-      description: sourceItem.description || item.description || "Consumable item.",
+      price: Math.max(
+        0,
+        Math.floor(Number(sourceItem.price || item.price || 0))
+      ),
+      description:
+        sourceItem.description || item.description || "Consumable item.",
       quantity: Math.max(1, Number(item.quantity || 1)),
       stats: getDefaultStats(),
       healPercent: Number(sourceItem.healPercent || item.healPercent || 0),
@@ -509,13 +518,23 @@ function getRebalancedPlayerData(player = {}) {
   const classId = player.classId || "swordsman";
 
   const baseStats = getBaseStatsByClassLevel(classId, level);
+
   const equipment = normalizeEquipment({
     ...player,
     classId,
   });
 
   const inventory = normalizeInventory(player.inventory || []);
-  const totalStats = calculateTotalStats(baseStats, equipment);
+
+  const equipmentStats = calculateTotalStats(baseStats, equipment);
+
+  const activePet = getActivePet({
+    ...player,
+    pets: player.pets || [],
+    activePetId: player.activePetId || null,
+  });
+
+  const totalStats = applyPetStats(equipmentStats, activePet);
 
   const hp = Math.min(
     Math.max(0, Number(player.hp ?? totalStats.maxHp)),
@@ -544,6 +563,9 @@ function getBaseUpdatePayload(player = {}, rebalanced = {}) {
     baseStats: rebalanced.baseStats,
     equipment: rebalanced.equipment,
     inventory: rebalanced.inventory,
+
+    pets: player.pets || [],
+    activePetId: player.activePetId || null,
 
     maxHp: rebalanced.totalStats.maxHp,
     attack: rebalanced.totalStats.attack,
@@ -601,6 +623,10 @@ module.exports = async function restCommand(message) {
       baseStats: rebalanced.baseStats,
       equipment: rebalanced.equipment,
       inventory: rebalanced.inventory,
+
+      pets: player.pets || [],
+      activePetId: player.activePetId || null,
+
       attack: rebalanced.totalStats.attack,
       defense: rebalanced.totalStats.defense,
       dodge: rebalanced.totalStats.dodge,

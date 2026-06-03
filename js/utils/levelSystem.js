@@ -4,12 +4,28 @@ const MAX_LEVEL = Number(
   balanceConfig.MAX_LEVEL || balanceConfig.maxLevel || 99
 );
 
+function safeNumber(value, fallback = 0) {
+  const number = Number(value);
+
+  if (Number.isNaN(number)) return fallback;
+
+  return number;
+}
+
+function normalizeClassId(classId = "swordsman") {
+  return String(classId || "swordsman").toLowerCase().trim();
+}
+
+function isMaxLevel(level) {
+  return Number(level || 1) >= MAX_LEVEL;
+}
+
 function getRequiredExp(level) {
   if (typeof balanceConfig.getRequiredExp === "function") {
     return balanceConfig.getRequiredExp(level);
   }
 
-  const lv = Math.max(1, Number(level || 1));
+  const lv = Math.max(1, safeNumber(level, 1));
 
   if (lv >= MAX_LEVEL) return Infinity;
 
@@ -17,8 +33,10 @@ function getRequiredExp(level) {
 }
 
 function getStatsGain(level, classId = "swordsman") {
+  const normalizedClassId = normalizeClassId(classId);
+
   if (typeof balanceConfig.getLevelStatGain === "function") {
-    return balanceConfig.getLevelStatGain(classId, level);
+    return balanceConfig.getLevelStatGain(normalizedClassId, level);
   }
 
   return {
@@ -31,8 +49,11 @@ function getStatsGain(level, classId = "swordsman") {
 }
 
 function getBaseStatsByClassLevel(classId = "swordsman", level = 1) {
+  const normalizedClassId = normalizeClassId(classId);
+  const safeLevel = Math.max(1, Math.min(MAX_LEVEL, safeNumber(level, 1)));
+
   if (typeof balanceConfig.getBaseStatsByClassLevel === "function") {
-    return balanceConfig.getBaseStatsByClassLevel(classId, level);
+    return balanceConfig.getBaseStatsByClassLevel(normalizedClassId, safeLevel);
   }
 
   return {
@@ -46,19 +67,19 @@ function getBaseStatsByClassLevel(classId = "swordsman", level = 1) {
 
 function normalizeBaseStats(baseStats = {}) {
   return {
-    attack: Math.floor(Number(baseStats.attack || 10)),
-    defense: Math.floor(Number(baseStats.defense || 5)),
-    maxHp: Math.floor(Number(baseStats.maxHp || 100)),
-    dodge: Number(Number(baseStats.dodge || 0).toFixed(2)),
-    crit: Number(Number(baseStats.crit || 0).toFixed(2)),
+    attack: Math.floor(safeNumber(baseStats.attack, 10)),
+    defense: Math.floor(safeNumber(baseStats.defense, 5)),
+    maxHp: Math.floor(safeNumber(baseStats.maxHp, 100)),
+    dodge: Number(safeNumber(baseStats.dodge, 0).toFixed(2)),
+    crit: Number(safeNumber(baseStats.crit, 0).toFixed(2)),
   };
 }
 
 function applyLevelUp(player = {}, gainedExp = 0) {
-  let level = Number(player.level || 1);
-  let exp = Number(player.exp || 0) + Number(gainedExp || 0);
+  let level = safeNumber(player.level, 1);
+  let exp = safeNumber(player.exp, 0) + safeNumber(gainedExp, 0);
 
-  const classId = player.classId || "swordsman";
+  const classId = normalizeClassId(player.classId || "swordsman");
 
   level = Math.max(1, Math.min(level, MAX_LEVEL));
   exp = Math.max(0, exp);
@@ -80,9 +101,6 @@ function applyLevelUp(player = {}, gainedExp = 0) {
     exp = 0;
   }
 
-  // Important rebalance fix:
-  // Always rebuild baseStats from balanceConfig using the final level.
-  // This prevents old pre-rebalance baseStats from staying too high.
   const baseStats = normalizeBaseStats(
     getBaseStatsByClassLevel(classId, level)
   );
@@ -94,12 +112,15 @@ function applyLevelUp(player = {}, gainedExp = 0) {
     baseStats,
     leveledUp,
     levelUps,
-    nextLevelExp: getRequiredExp(level),
+    nextLevelExp: isMaxLevel(level) ? null : getRequiredExp(level),
+    maxLevel: MAX_LEVEL,
+    isMaxLevel: isMaxLevel(level),
   };
 }
 
 module.exports = {
   MAX_LEVEL,
+  isMaxLevel,
   getRequiredExp,
   getStatsGain,
   normalizeBaseStats,

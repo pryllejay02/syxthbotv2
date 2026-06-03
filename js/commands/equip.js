@@ -4,6 +4,11 @@ const { getQualityEmoji } = require("../utils/qualitySystem");
 const balanceConfig = require("../data/balanceConfig");
 const shopItems = require("../data/shopItems");
 
+const {
+  getActivePet,
+  applyPetStats,
+} = require("../utils/petSystem");
+
 const EQUIPMENT_SLOTS = [
   "weapon",
   "helmet",
@@ -386,7 +391,10 @@ function rebalanceItemStats(item = {}) {
       compatibleClasses:
         sourceItem.compatibleClasses || item.compatibleClasses || ["all"],
 
-      price: Math.max(0, Math.floor(Number(sourceItem.price || item.price || 0))),
+      price: Math.max(
+        0,
+        Math.floor(Number(sourceItem.price || item.price || 0))
+      ),
 
       description:
         sourceItem.description || item.description || "Consumable item.",
@@ -526,6 +534,13 @@ function getBaseStats(player) {
     dodge: Number(player.baseStats?.dodge || 0),
     crit: Number(player.baseStats?.crit || 0),
   };
+}
+
+function getFinalStats(baseStats, equipment, player = {}) {
+  const equipmentStats = calculateTotalStats(baseStats, equipment);
+  const activePet = getActivePet(player);
+
+  return applyPetStats(equipmentStats, activePet);
 }
 
 function shouldReturnOldItemToInventory(item) {
@@ -730,7 +745,18 @@ module.exports = async function equipCommand(message, args = []) {
       classId,
     });
 
-    const oldTotalStats = calculateTotalStats(baseStats, equipment);
+    const petAwarePlayer = {
+      ...player,
+      pets: player.pets || [],
+      activePetId: player.activePetId || null,
+    };
+
+    const oldTotalStats = getFinalStats(
+      baseStats,
+      equipment,
+      petAwarePlayer
+    );
+
     const oldEquippedItem = equipment[slot];
 
     removeOneInventoryItem(inventory, itemIndex);
@@ -741,13 +767,21 @@ module.exports = async function equipCommand(message, args = []) {
 
     equipment[slot] = buildEquippedItem(item);
 
-    const totalStats = calculateTotalStats(baseStats, equipment);
+    const totalStats = getFinalStats(
+      baseStats,
+      equipment,
+      petAwarePlayer
+    );
+
     const newHp = getHpAfterEquip(player, oldTotalStats, totalStats);
 
     transaction.update(playerRef, {
       baseStats,
       equipment,
       inventory,
+
+      pets: player.pets || [],
+      activePetId: player.activePetId || null,
 
       attack: totalStats.attack,
       defense: totalStats.defense,

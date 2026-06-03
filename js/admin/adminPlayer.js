@@ -9,6 +9,11 @@ const balanceConfig = require("../data/balanceConfig");
 const shopItems = require("../data/shopItems");
 const { getQualityEmoji } = require("../utils/qualitySystem");
 
+const {
+  getActivePet,
+  applyPetStats,
+} = require("../utils/petSystem");
+
 function getMention(message) {
   return message.mentions.users.first();
 }
@@ -530,7 +535,15 @@ function recalculatePlayerStats(player = {}, targetLevel = null) {
     classId,
   });
 
-  const totalStats = calculateTotalStats(baseStats, equipment);
+  const equipmentStats = calculateTotalStats(baseStats, equipment);
+
+  const activePet = getActivePet({
+    ...player,
+    pets: player.pets || [],
+    activePetId: player.activePetId || null,
+  });
+
+  const totalStats = applyPetStats(equipmentStats, activePet);
 
   return {
     level,
@@ -538,6 +551,7 @@ function recalculatePlayerStats(player = {}, targetLevel = null) {
     baseStats,
     equipment,
     totalStats,
+    activePet,
   };
 }
 
@@ -559,6 +573,30 @@ function getInventorySummary(inventory = []) {
     legendary: safeInventory.filter((item) => item.quality === "Legendary")
       .length,
   };
+}
+
+function getPetSummary(player = {}) {
+  const pets = Array.isArray(player.pets) ? player.pets : [];
+
+  const activePet = getActivePet({
+    ...player,
+    pets,
+    activePetId: player.activePetId || null,
+  });
+
+  return {
+    total: pets.length,
+    common: pets.filter((pet) => pet.quality === "Common").length,
+    rare: pets.filter((pet) => pet.quality === "Rare").length,
+    legendary: pets.filter((pet) => pet.quality === "Legendary").length,
+    activePet,
+  };
+}
+
+function getActivePetText(activePet = null) {
+  if (!activePet) return "None";
+
+  return `${activePet.emoji || "🐾"} ${activePet.name || "Unknown Pet"} Lv.${activePet.level || 1}`;
 }
 
 function getAdminReviveHp(maxHp) {
@@ -661,6 +699,9 @@ module.exports = async function adminPlayer(message, args = []) {
         equipment: recalculated.equipment,
         inventory,
 
+        pets: player.pets || [],
+        activePetId: player.activePetId || null,
+
         attack: recalculated.totalStats.attack,
         defense: recalculated.totalStats.defense,
         maxHp: recalculated.totalStats.maxHp,
@@ -682,6 +723,7 @@ module.exports = async function adminPlayer(message, args = []) {
         player,
         classId: recalculated.classId,
         totalStats: recalculated.totalStats,
+        activePet: recalculated.activePet,
       };
     });
 
@@ -693,6 +735,7 @@ module.exports = async function adminPlayer(message, args = []) {
       `✅ **${result.player.username || target.username}** is now **Lv.${level}**.\n\n` +
         `🎭 Class: **${result.classId}**\n` +
         `⭐ EXP: **0**\n` +
+        `🐾 Active Pet: **${getActivePetText(result.activePet)}**\n` +
         `⚔️ ATK: **${result.totalStats.attack}**\n` +
         `🛡️ DEF: **${result.totalStats.defense}**\n` +
         `❤️ HP: **${result.totalStats.maxHp}/${result.totalStats.maxHp}**\n` +
@@ -721,6 +764,9 @@ module.exports = async function adminPlayer(message, args = []) {
         equipment: recalculated.equipment,
         inventory,
 
+        pets: player.pets || [],
+        activePetId: player.activePetId || null,
+
         attack: recalculated.totalStats.attack,
         defense: recalculated.totalStats.defense,
         maxHp: recalculated.totalStats.maxHp,
@@ -739,6 +785,7 @@ module.exports = async function adminPlayer(message, args = []) {
         ok: true,
         player,
         maxHp: recalculated.totalStats.maxHp,
+        activePet: recalculated.activePet,
       };
     });
 
@@ -748,6 +795,7 @@ module.exports = async function adminPlayer(message, args = []) {
 
     return message.reply(
       `❤️ **${result.player.username || target.username}** has been fully healed.\n\n` +
+        `🐾 Active Pet: **${getActivePetText(result.activePet)}**\n` +
         `HP: **${result.maxHp}/${result.maxHp}**`
     );
   }
@@ -775,6 +823,9 @@ module.exports = async function adminPlayer(message, args = []) {
         equipment: recalculated.equipment,
         inventory,
 
+        pets: player.pets || [],
+        activePetId: player.activePetId || null,
+
         attack: recalculated.totalStats.attack,
         defense: recalculated.totalStats.defense,
         maxHp: recalculated.totalStats.maxHp,
@@ -796,6 +847,7 @@ module.exports = async function adminPlayer(message, args = []) {
         player,
         reviveHp,
         maxHp,
+        activePet: recalculated.activePet,
       };
     });
 
@@ -805,6 +857,7 @@ module.exports = async function adminPlayer(message, args = []) {
 
     return message.reply(
       `✨ **${result.player.username || target.username}** revived.\n\n` +
+        `🐾 Active Pet: **${getActivePetText(result.activePet)}**\n` +
         `HP: **${result.reviveHp}/${result.maxHp}**`
     );
   }
@@ -819,6 +872,7 @@ module.exports = async function adminPlayer(message, args = []) {
     const player = playerDoc.data();
     const inventory = normalizeInventory(player.inventory || []);
     const summary = getInventorySummary(inventory);
+    const petSummary = getPetSummary(player);
 
     return message.reply(
       `🎒 **${player.username || target.username}'s Inventory Summary**\n\n` +
@@ -828,7 +882,13 @@ module.exports = async function adminPlayer(message, args = []) {
         `🌱 Starter: **${summary.starter}**\n` +
         `🟢 Common: **${summary.common}**\n` +
         `🔵 Rare: **${summary.rare}**\n` +
-        `🟠 Legendary: **${summary.legendary}**`
+        `🟠 Legendary: **${summary.legendary}**\n\n` +
+        `🐾 **Pets**\n` +
+        `Total Pets: **${petSummary.total}**\n` +
+        `🟢 Common: **${petSummary.common}**\n` +
+        `🔵 Rare: **${petSummary.rare}**\n` +
+        `🟠 Legendary: **${petSummary.legendary}**\n` +
+        `Active Pet: **${getActivePetText(petSummary.activePet)}**`
     );
   }
 

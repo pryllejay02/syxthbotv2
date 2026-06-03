@@ -1,3 +1,5 @@
+const path = require("path");
+
 const { db } = require("../../firebase/firebase");
 
 const {
@@ -10,7 +12,7 @@ const partyConfig = require("../data/partyConfig");
 const balanceConfig = require("../data/balanceConfig");
 
 function getRandomBossByTier(tier) {
-  const bosses = bossConfig.bosses[tier] || [];
+  const bosses = bossConfig.bosses?.[tier] || [];
 
   if (bosses.length === 0) return null;
 
@@ -62,8 +64,22 @@ function getBossExpireMinutes() {
   );
 }
 
-function getBossStat(boss = {}, statName, fallback = 0) {
-  return Number(boss[statName] ?? fallback);
+function getBossExpireMs() {
+  return getBossExpireMinutes() * 60 * 1000;
+}
+
+function getBalancedBossStats(boss = {}) {
+  if (typeof balanceConfig.getBalancedBossStats === "function") {
+    return balanceConfig.getBalancedBossStats(boss);
+  }
+
+  return {
+    hp: Number(boss.hp || 1),
+    attack: Number(boss.attack || 1),
+    defense: Number(boss.defense || 0),
+    dodge: Number(boss.dodge || 0),
+    crit: Number(boss.crit || 0),
+  };
 }
 
 function getBossRecommendedLevel(boss = {}) {
@@ -75,25 +91,44 @@ function getBossRecommendedLevel(boss = {}) {
 
 function getBossRewards(boss = {}) {
   return {
-    gold: Number(boss.rewards?.gold || 0),
-    exp: Number(boss.rewards?.exp || 0),
+    gold: Math.max(0, Number(boss.rewards?.gold || 0)),
+    exp: Math.max(0, Number(boss.rewards?.exp || 0)),
   };
 }
 
 function buildBossData(worldId, tier, boss) {
-  const hp = getBossStat(boss, "hp", 1);
-  const attack = getBossStat(boss, "attack", 1);
-  const defense = getBossStat(boss, "defense", 0);
-  const dodge = getBossStat(boss, "dodge", 0);
-  const crit = getBossStat(boss, "crit", 0);
+  const level = Math.max(1, Number(boss.level || 1));
+
+  const balancedStats = getBalancedBossStats({
+    ...boss,
+    level,
+  });
+
+  const hp = Math.max(1, Number(balancedStats.hp || boss.hp || 1));
+  const attack = Math.max(1, Number(balancedStats.attack || boss.attack || 1));
+  const defense = Math.max(0, Number(balancedStats.defense || boss.defense || 0));
+
+  const dodge = Math.max(
+    0,
+    Number(Number(balancedStats.dodge || boss.dodge || 0).toFixed(1))
+  );
+
+  const crit = Math.max(
+    0,
+    Number(Number(balancedStats.crit || boss.crit || 0).toFixed(1))
+  );
+
+  const spawnedAt = new Date();
+  const expiresAt = new Date(spawnedAt.getTime() + getBossExpireMs());
 
   return {
     worldId,
-    bossId: boss.id,
-    bossName: boss.name,
+
+    bossId: boss.id || "unknown_boss",
+    bossName: boss.name || "Unknown Boss",
     tier,
 
-    level: Number(boss.level || 1),
+    level,
 
     hp,
     maxHp: hp,
@@ -102,11 +137,20 @@ function buildBossData(worldId, tier, boss) {
     dodge,
     crit,
 
-    recommendedLevel: getBossRecommendedLevel(boss),
+    recommendedLevel: getBossRecommendedLevel({
+      ...boss,
+      level,
+    }),
+
     rewards: getBossRewards(boss),
 
     status: "active",
-    spawnedAt: new Date(),
+
+    spawnedAt,
+    expiresAt,
+
+    summonSource: "scheduled_spawn",
+
     updatedAt: new Date(),
   };
 }
@@ -142,8 +186,6 @@ async function clearOldBossIfNeeded(worldId, existingBoss) {
   const bossHp = Number(existingBoss.hp || 0);
   const bossStatus = String(existingBoss.status || "unknown").toLowerCase();
 
-  // Clear old defeated, inactive, or corrupted boss data before a new spawn.
-  // This also clears the old damage/ranking subcollection.
   if (bossStatus !== "active" || bossHp <= 0) {
     await deleteBossData(worldId);
 
@@ -153,11 +195,20 @@ async function clearOldBossIfNeeded(worldId, existingBoss) {
     };
   }
 
-  const spawnedAt = getTimestampMillis(existingBoss.spawnedAt);
-  const expireMinutes = getBossExpireMinutes();
-  const expiresAt = spawnedAt + expireMinutes * 60 * 1000;
+  const expiresAt = getTimestampMillis(existingBoss.expiresAt);
 
-  if (spawnedAt && Date.now() >= expiresAt) {
+  if (expiresAt && Date.now() >= expiresAt) {
+    await deleteBossData(worldId);
+
+    return {
+      cleared: true,
+      reason: "old_active_boss_expired",
+    };
+  }
+
+  const spawnedAt = getTimestampMillis(existingBoss.spawnedAt);
+
+  if (spawnedAt && Date.now() >= spawnedAt + getBossExpireMs()) {
     await deleteBossData(worldId);
 
     return {
@@ -172,11 +223,75 @@ async function clearOldBossIfNeeded(worldId, existingBoss) {
   };
 }
 
+async function sendBossSpawnAnnouncement(client, worldId, worldConfig, bossData, rawBoss) {
+  const channel = await client.channels
+    .fetch(worldConfig.bossRaidChannelId)
+    .catch(() => null);
+
+  if (!channel) return false;
+
+  let bossImage = null;
+  let bossImageName = null;
+
+  if (rawBoss.image) {
+    bossImageName = path.basename(rawBoss.image);
+
+    bossImage = new AttachmentBuilder(rawBoss.image, {
+      name: bossImageName,
+    });
+  }
+
+  const embed = new EmbedBuilder()
+    .setColor("#8B0000")
+    .setTitle(`👹 ${bossData.bossName} Appeared!`)
+    .setDescription(
+      `🌍 World: **${worldId}**\n\n` +
+        `⭐ Level: **Lv.${bossData.level}**\n` +
+        `📌 Recommended: **Lv.${bossData.recommendedLevel.min}-${bossData.recommendedLevel.max}**\n\n` +
+        `❤️ HP: **${bossData.hp}/${bossData.maxHp}**\n` +
+        `⚔️ Attack: **${bossData.attack}**\n` +
+        `🛡️ Defense: **${bossData.defense}**\n` +
+        `💨 Dodge: **${bossData.dodge}%**\n` +
+        `💥 Crit: **${bossData.crit}%**\n\n` +
+        `🎁 Rewards: **${bossData.rewards.exp} EXP** • **${bossData.rewards.gold} Gold**\n` +
+        `⏳ Expires In: **${getBossExpireMinutes()} minutes**\n\n` +
+        `⚠️ RAID BOSS ACTIVE\n\n` +
+        `Use \`!s raid hit\`\n` +
+        `Use \`!s raid status\``
+    )
+    .setFooter({
+      text: "Syxth Boss Raid",
+    })
+    .setTimestamp();
+
+  if (bossImage && bossImageName) {
+    embed.setImage(`attachment://${bossImageName}`);
+
+    await channel.send({
+      embeds: [embed],
+      files: [bossImage],
+    });
+
+    return true;
+  }
+
+  await channel.send({
+    embeds: [embed],
+  });
+
+  return true;
+}
+
 async function spawnBoss(client, worldId, tier) {
-  const worldConfig = partyConfig.worlds[worldId];
+  const worldConfig = partyConfig.worlds?.[worldId];
 
   if (!worldConfig) {
     console.log(`Missing party/world config for ${worldId}`);
+    return null;
+  }
+
+  if (!worldConfig.bossRaidChannelId) {
+    console.log(`Missing boss raid channel for ${worldId}`);
     return null;
   }
 
@@ -211,47 +326,7 @@ async function spawnBoss(client, worldId, tier) {
 
   await db.collection("worldBosses").doc(worldId).set(bossData);
 
-  const channel = await client.channels
-    .fetch(worldConfig.bossRaidChannelId)
-    .catch(() => null);
-
-  if (channel) {
-    const bossImage = boss.image ? new AttachmentBuilder(boss.image) : null;
-
-    const embed = new EmbedBuilder()
-      .setColor("#8B0000")
-      .setTitle(`👹 ${boss.name} Appeared!`)
-      .setDescription(
-        `🌍 World: **${worldId}**\n\n` +
-          `⭐ Level: **Lv.${bossData.level}**\n` +
-          `📌 Recommended: **Lv.${bossData.recommendedLevel.min}-${bossData.recommendedLevel.max}**\n\n` +
-          `❤️ HP: **${bossData.hp}/${bossData.maxHp}**\n` +
-          `⚔️ Attack: **${bossData.attack}**\n` +
-          `🛡️ Defense: **${bossData.defense}**\n` +
-          `💨 Dodge: **${bossData.dodge}%**\n` +
-          `💥 Crit: **${bossData.crit}%**\n\n` +
-          `⚠️ RAID BOSS ACTIVE\n\n` +
-          `Use \`!s raid hit\`\n` +
-          `Use \`!s raid status\``
-      )
-      .setFooter({
-        text: "Syxth Boss Raid",
-      })
-      .setTimestamp();
-
-    if (bossImage) {
-      embed.setImage(`attachment://${bossImage.name}`);
-
-      await channel.send({
-        embeds: [embed],
-        files: [bossImage],
-      });
-    } else {
-      await channel.send({
-        embeds: [embed],
-      });
-    }
-  }
+  await sendBossSpawnAnnouncement(client, worldId, worldConfig, bossData, boss);
 
   return bossData;
 }

@@ -29,6 +29,14 @@ function uniqueIds(ids = []) {
   return [...new Set(ids.filter(Boolean))];
 }
 
+function getSafePartyStatus(status = "ready") {
+  const currentStatus = String(status || "ready").toLowerCase();
+
+  if (currentStatus === "raiding") return "raiding";
+
+  return "ready";
+}
+
 async function createPartyVoiceChannel(message, worldConfig, leaderId) {
   if (!message.guild) return null;
   if (!worldConfig?.partyVoiceCategoryId) return null;
@@ -94,42 +102,48 @@ async function createPartyVoiceChannel(message, worldConfig, leaderId) {
 async function allowMemberInPartyVoice(channel, userId) {
   if (!channel || !userId) return false;
 
-  await channel.permissionOverwrites
+  const success = await channel.permissionOverwrites
     .edit(userId, {
       ViewChannel: true,
       Connect: true,
       Speak: true,
     })
+    .then(() => true)
     .catch((error) => {
       console.error("Failed to allow member in party voice:", error);
       return false;
     });
 
-  return true;
+  return success;
 }
 
 async function removeMemberFromPartyVoice(channel, userId) {
   if (!channel || !userId) return false;
 
-  await channel.permissionOverwrites
+  const success = await channel.permissionOverwrites
     .delete(userId)
-    .catch(() => null);
+    .then(() => true)
+    .catch((error) => {
+      console.error("Failed to remove member from party voice:", error);
+      return false;
+    });
 
-  return true;
+  return success;
 }
 
 async function moveMemberToPartyVoice(member, channel) {
   if (!member || !channel) return false;
   if (!member.voice?.channel) return false;
 
-  await member.voice
+  const success = await member.voice
     .setChannel(channel)
+    .then(() => true)
     .catch((error) => {
       console.error("Failed to move member to party voice:", error);
       return false;
     });
 
-  return true;
+  return success;
 }
 
 async function safeDeletePartyVoiceChannel(guild, voiceChannelId) {
@@ -196,25 +210,42 @@ async function createPartyDocument({
 async function updatePartyMembers(partyId, members, invited, voiceChannelId) {
   const partyRef = db.collection("parties").doc(partyId);
 
-  const uniqueMembers = uniqueIds(members);
-  const uniqueInvited = uniqueIds(invited).filter(
-    (id) => !uniqueMembers.includes(id)
-  );
+  return db.runTransaction(async (transaction) => {
+    const partyDoc = await transaction.get(partyRef);
 
-  await partyRef.update({
-    members: uniqueMembers,
-    invited: uniqueInvited,
-    voiceChannelId: voiceChannelId || null,
-    status: "ready",
-    updatedAt: new Date(),
+    if (!partyDoc.exists) {
+      return {
+        ok: false,
+        message: "Party no longer exists.",
+      };
+    }
+
+    const party = partyDoc.data();
+
+    const uniqueMembers = uniqueIds(members);
+    const uniqueInvited = uniqueIds(invited).filter(
+      (id) => !uniqueMembers.includes(id)
+    );
+
+    const status = getSafePartyStatus(party.status);
+
+    transaction.update(partyRef, {
+      members: uniqueMembers,
+      invited: uniqueInvited,
+      voiceChannelId: voiceChannelId || null,
+      status,
+      updatedAt: new Date(),
+    });
+
+    return {
+      ok: true,
+      partyId,
+      members: uniqueMembers,
+      invited: uniqueInvited,
+      voiceChannelId: voiceChannelId || null,
+      status,
+    };
   });
-
-  return {
-    partyId,
-    members: uniqueMembers,
-    invited: uniqueInvited,
-    voiceChannelId: voiceChannelId || null,
-  };
 }
 
 async function addInvitesToParty(partyId, inviteIds = []) {
@@ -331,11 +362,13 @@ async function acceptPartyInvite(partyId, userId, voiceChannelId) {
     const updatedVoiceChannelId =
       voiceChannelId || party.voiceChannelId || null;
 
+    const status = getSafePartyStatus(party.status);
+
     transaction.update(partyRef, {
       members: updatedMembers,
       invited: updatedInvited,
       voiceChannelId: updatedVoiceChannelId,
-      status: "ready",
+      status,
       updatedAt: new Date(),
     });
 
@@ -347,6 +380,7 @@ async function acceptPartyInvite(partyId, userId, voiceChannelId) {
         members: updatedMembers,
         invited: updatedInvited,
         voiceChannelId: updatedVoiceChannelId,
+        status,
       },
       updatedMembers,
       updatedInvited,

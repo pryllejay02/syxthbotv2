@@ -1,9 +1,18 @@
 const { db } = require("../../firebase/firebase");
 const shopItems = require("../data/shopItems");
+const petsData = require("../data/pets");
 const bossConfig = require("../data/bossConfig");
 const balanceConfig = require("../data/balanceConfig");
 const { getQualityEmoji } = require("../utils/qualitySystem");
 const { generateBossDrop } = require("../utils/bossLootSystem");
+
+const {
+  createPet,
+  normalizePets,
+  calculatePetStats,
+  formatPetStats,
+  getPetMaxLevel,
+} = require("../utils/petSystem");
 
 const MAX_ADMIN_ITEM_QUANTITY = Number(
   balanceConfig.adminItem?.maxQuantity || 50
@@ -224,6 +233,39 @@ function findShopItemById(itemId) {
 
   return shopItems.find(
     (shopItem) => shopItem.id && normalizeId(shopItem.id) === targetId
+  );
+}
+
+function findPetById(petId) {
+  const targetId = normalizeId(petId);
+
+  return petsData.find(
+    (pet) => pet.id && normalizeId(pet.id) === targetId
+  );
+}
+
+function getPetAdminRollSource(basePet = {}, quality = "Common") {
+  if (
+    String(basePet.dropGroup || "").toLowerCase() === "boss" ||
+    quality === "Rare" ||
+    quality === "Legendary"
+  ) {
+    return "boss_pet_drop";
+  }
+
+  return "monster_pet_drop";
+}
+
+function formatGeneratedPet(pet = {}) {
+  const petStats = calculatePetStats(pet);
+
+  return (
+    `${pet.emoji || "🐾"} **${pet.name || "Unknown Pet"}**\n` +
+    `🏷️ ID: \`${pet.id || "no-id"}\`\n` +
+    `⭐ Quality: **${pet.qualityEmoji || ""} ${pet.quality || "Common"}**\n` +
+    `📈 Level: **${pet.level || 1}/${getPetMaxLevel(pet)}**\n` +
+    `🔓 Status: **Unlocked**\n` +
+    `📊 ${formatPetStats(petStats)}`
   );
 }
 
@@ -513,10 +555,117 @@ module.exports = async function adminItems(message, args = []) {
     );
   }
 
+  if (subCommand === "givepet") {
+    const petId = args[2];
+    const qualityInput = args[3] || "Common";
+    const quantity = parseQuantity(args[4] || 1);
+
+    if (!petId || !quantity) {
+      return message.reply(
+        "❌ Usage: `!s admin givepet @player <pet_id> <Common/Rare/Legendary> <qty>`\n" +
+          `Quantity must be from **1-${MAX_ADMIN_ITEM_QUANTITY}**.`
+      );
+    }
+
+    const validQuality = normalizeQuality(qualityInput, [
+      "Common",
+      "Rare",
+      "Legendary",
+    ]);
+
+    if (!validQuality) {
+      return message.reply(
+        "❌ Quality must be `Common`, `Rare`, or `Legendary`."
+      );
+    }
+
+    const basePet = findPetById(petId);
+
+    if (!basePet) {
+      return message.reply("❌ Pet not found in `pets.js`.");
+    }
+
+    const allowedQualities = Array.isArray(basePet.allowedQualities)
+      ? basePet.allowedQualities
+      : ["Common"];
+
+    if (!allowedQualities.includes(validQuality)) {
+      return message.reply(
+        `❌ **${basePet.name}** cannot be generated as **${validQuality}**.\n\n` +
+          `Allowed quality: **${allowedQualities.join(", ")}**`
+      );
+    }
+
+    const result = await db.runTransaction(async (transaction) => {
+      const playerDoc = await transaction.get(playerRef);
+
+      if (!playerDoc.exists) {
+        return {
+          ok: false,
+          message: "❌ Character not found.",
+        };
+      }
+
+      const player = playerDoc.data();
+      const pets = normalizePets(player.pets || []);
+      const givenPets = [];
+
+      for (let i = 0; i < quantity; i++) {
+        const rollSource = getPetAdminRollSource(basePet, validQuality);
+        const generatedPet = createPet(basePet, validQuality, rollSource);
+
+        if (!generatedPet) {
+          return {
+            ok: false,
+            message: "❌ Failed to generate pet.",
+          };
+        }
+
+        const adminPet = {
+          ...generatedPet,
+          source: "admin_pet_generated",
+          adminRollSource: rollSource,
+          locked: false,
+          active: false,
+        };
+
+        pets.push(adminPet);
+        givenPets.push(adminPet);
+      }
+
+      transaction.update(playerRef, {
+        pets,
+        activePetId: player.activePetId || null,
+        updatedAt: new Date(),
+      });
+
+      return {
+        ok: true,
+        player,
+        givenPets,
+      };
+    });
+
+    if (!result.ok) {
+      return message.reply(result.message || "❌ Give pet failed.");
+    }
+
+    const examplePet = result.givenPets[0];
+
+    return message.reply(
+      `✅ Gave **${quantity}x ${validQuality} ${basePet.name}** to **${
+        result.player.username || target.username
+      }**.\n\n` +
+        `🐾 **Example Pet Generated**\n` +
+        formatGeneratedPet(examplePet)
+    );
+  }
+
   return message.reply(
     "❌ Unknown item admin command.\n\n" +
       "Available:\n" +
       "`!s admin giveitem @player <item_id> <Common/Rare/Legendary> <qty>`\n" +
-      "`!s admin givebossitem @player <boss_id/tier> <Rare/Legendary> <qty>`"
+      "`!s admin givebossitem @player <boss_id/tier> <Rare/Legendary> <qty>`\n" +
+      "`!s admin givepet @player <pet_id> <Common/Rare/Legendary> <qty>`"
   );
 };

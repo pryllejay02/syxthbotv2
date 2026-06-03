@@ -4,6 +4,11 @@ const balanceConfig = require("../data/balanceConfig");
 const shopItems = require("../data/shopItems");
 const { getQualityEmoji } = require("../utils/qualitySystem");
 
+const {
+  getActivePet,
+  applyPetStats,
+} = require("../utils/petSystem");
+
 const EQUIPMENT_SLOTS = [
   "weapon",
   "helmet",
@@ -566,7 +571,18 @@ module.exports = async function adminMaintenance(message, args = []) {
 
     const inventory = normalizeInventory(player.inventory || []);
 
-    const totalStats = calculateTotalStats(baseStats, equipment);
+    const equipmentStats = calculateTotalStats(baseStats, equipment);
+
+    const pets = Array.isArray(player.pets) ? player.pets : [];
+    const activePetId = player.activePetId || null;
+
+    const activePet = getActivePet({
+      ...player,
+      pets,
+      activePetId,
+    });
+
+    const totalStats = applyPetStats(equipmentStats, activePet);
 
     const oldMaxHp = Number(player.maxHp || baseStats.maxHp || 100);
     const hp = getHpAfterRebalance(player, oldMaxHp, totalStats.maxHp);
@@ -597,6 +613,9 @@ module.exports = async function adminMaintenance(message, args = []) {
       equipment,
       baseStats,
 
+      pets,
+      activePetId,
+
       monsterKills: Number(player.monsterKills || 0),
       retreats: Number(player.retreats || 0),
 
@@ -623,12 +642,17 @@ module.exports = async function adminMaintenance(message, args = []) {
       ok: true,
       oldStats,
       repairedData,
+      activePet,
     };
   });
 
   if (!result.ok) {
     return message.reply(result.message || "❌ Player repair failed.");
   }
+
+  const activePetText = result.activePet
+    ? `${result.activePet.emoji || "🐾"} ${result.activePet.name} Lv.${result.activePet.level || 1}`
+    : "None";
 
   return message.reply(
     `✅ Player data repaired and rebalanced for **${target.username}**.\n\n` +
@@ -647,6 +671,8 @@ module.exports = async function adminMaintenance(message, args = []) {
       `🛡️ DEF: **${result.repairedData.defense}**\n` +
       `💨 Dodge: **${result.repairedData.dodge}%**\n` +
       `💥 Crit: **${result.repairedData.crit}%**\n` +
+      `🐾 Pets Owned: **${result.repairedData.pets.length}**\n` +
+      `🐾 Active Pet: **${activePetText}**\n` +
       `🎒 Inventory: **${result.repairedData.inventory.length} stack(s)**\n` +
       `🏠 Room: ${
         result.repairedData.privateChannelId

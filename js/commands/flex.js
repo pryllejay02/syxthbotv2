@@ -9,6 +9,17 @@ const {
   getQualityColor,
 } = require("../utils/qualitySystem");
 
+const {
+  normalizePets,
+  findPlayerPet,
+  calculatePetStats,
+  formatPetStats,
+  formatPetStatus,
+  getPetMaxLevel,
+  getPetRequiredExp,
+  getPetExpDisplay,
+} = require("../utils/petSystem");
+
 const EQUIPMENT_SLOTS = [
   "weapon",
   "helmet",
@@ -232,12 +243,14 @@ function normalizeFallbackStats(item = {}) {
     attack: Math.floor(Number(item.stats?.attack || 0)),
     defense: Math.floor(Number(item.stats?.defense || 0)),
     maxHp: Math.floor(Number(item.stats?.maxHp || 0)),
+
     dodge: capPercentStat(
       "dodge",
       Number(item.stats?.dodge || 0),
       quality,
       source
     ),
+
     crit: capPercentStat(
       "crit",
       Number(item.stats?.crit || 0),
@@ -277,6 +290,7 @@ function rebalanceItemStats(item = {}) {
 
   const quality = getQuality(item);
   const source = getSource(item);
+  const baseItem = findBaseShopItem(item);
 
   if (isStarterItem(item)) {
     return {
@@ -297,22 +311,49 @@ function rebalanceItemStats(item = {}) {
   }
 
   if (isConsumable(item)) {
+    const sourceItem = baseItem || item;
+
     return {
       ...item,
+
+      id: item.id || sourceItem.id,
+      baseItemId: sourceItem.baseItemId || sourceItem.id || item.baseItemId,
+
+      name: sourceItem.name || item.name || "Unknown Consumable",
+      type: sourceItem.type || item.type || "Consumable",
 
       quality,
       qualityEmoji: item.qualityEmoji || getQualityEmoji(quality),
 
+      requiredLevel: Number(sourceItem.requiredLevel || item.requiredLevel || 1),
+      compatibleClasses:
+        sourceItem.compatibleClasses || item.compatibleClasses || ["all"],
+
+      price: Math.max(
+        0,
+        Math.floor(Number(sourceItem.price || item.price || 0))
+      ),
+
+      description:
+        sourceItem.description || item.description || "Consumable item.",
+
       quantity: Math.max(1, Number(item.quantity || 1)),
 
-      stats: item.stats || getDefaultStats(),
+      stats: getDefaultStats(),
 
-      healPercent: Number(item.healPercent || 0),
-      healAmount: Number(item.healAmount || item.heal || 0),
+      healPercent: Number(sourceItem.healPercent || item.healPercent || 0),
+      healAmount: Number(
+        sourceItem.healAmount ||
+          sourceItem.heal ||
+          item.healAmount ||
+          item.heal ||
+          0
+      ),
+
+      source: item.source || "shop",
+      emoji: sourceItem.emoji || item.emoji || "🧪",
     };
   }
-
-  const baseItem = findBaseShopItem(item);
 
   if (!baseItem) {
     const fallbackStats = normalizeFallbackStats(item);
@@ -366,7 +407,6 @@ function rebalanceItemStats(item = {}) {
     ),
 
     description: makeDescription(rebalancedStats),
-
     stats: rebalancedStats,
 
     emoji: baseItem.emoji || item.emoji || "📦",
@@ -399,14 +439,8 @@ function formatStats(stats = {}) {
   return parts.length ? parts.join("\n") : "No bonus stats";
 }
 
-function getItemColor(item = {}) {
-  const quality = item.quality || "Common";
-
-  if (typeof getQualityColor === "function") {
-    return getQualityColor(quality);
-  }
-
-  const normalizedQuality = String(quality).toLowerCase();
+function getFallbackQualityColor(quality = "Common") {
+  const normalizedQuality = String(quality || "Common").toLowerCase();
 
   if (normalizedQuality === "legendary") return "#F59E0B";
   if (normalizedQuality === "rare") return "#3B82F6";
@@ -414,6 +448,26 @@ function getItemColor(item = {}) {
   if (normalizedQuality === "starter") return "#94A3B8";
 
   return "#8B0000";
+}
+
+function getSafeQualityColor(quality = "Common") {
+  if (String(quality || "").toLowerCase() === "starter") {
+    return getFallbackQualityColor("Starter");
+  }
+
+  if (typeof getQualityColor === "function") {
+    try {
+      return getQualityColor(quality);
+    } catch {
+      return getFallbackQualityColor(quality);
+    }
+  }
+
+  return getFallbackQualityColor(quality);
+}
+
+function getItemColor(item = {}) {
+  return getSafeQualityColor(item.quality || "Common");
 }
 
 function getItemEmoji(item = {}) {
@@ -494,27 +548,195 @@ function findEquippedItem(equipment = {}, input) {
   return null;
 }
 
-function formatSourceText(sourceText) {
-  return String(sourceText || "Unknown");
+function getItemSourceText(source = "unknown") {
+  const normalized = String(source || "unknown").toLowerCase();
+
+  const labels = {
+    shop: "Shop Item",
+    starter: "Starter Item",
+    monster_drop: "Monster Drop",
+    boss_raid: "Boss Raid Drop",
+    admin_generated: "Admin Generated Item",
+    admin: "Admin Generated Item",
+    admin_consumable: "Admin Given Consumable",
+    unknown: "Unknown",
+  };
+
+  return labels[normalized] || source;
+}
+
+function formatSourceText(locationText, itemSource = null) {
+  if (!itemSource) return String(locationText || "Unknown");
+
+  return `${String(locationText || "Unknown")} • ${getItemSourceText(itemSource)}`;
+}
+
+function getPetColor(pet = {}) {
+  return getSafeQualityColor(pet.quality || "Common");
+}
+
+function getPetQualityDisplay(pet = {}) {
+  const quality = pet.quality || "Common";
+
+  return {
+    quality,
+    qualityEmoji: pet.qualityEmoji || getQualityEmoji(quality),
+  };
+}
+
+function getPetExpDisplaySafe(pet = {}) {
+  if (typeof getPetExpDisplay === "function") {
+    return getPetExpDisplay(pet);
+  }
+
+  const level = Math.max(1, Number(pet.level || 1));
+  const maxLevel = getPetMaxLevel(pet);
+
+  if (level >= maxLevel) {
+    return "MAX";
+  }
+
+  const nextExp =
+    typeof getPetRequiredExp === "function"
+      ? getPetRequiredExp(level)
+      : "?";
+
+  return `${Math.max(0, Number(pet.exp || 0))}/${nextExp}`;
+}
+
+function getPetTradeNote(pet = {}, player = {}) {
+  const active =
+    normalizeInput(pet.id) === normalizeInput(player.activePetId) ||
+    pet.active === true;
+
+  if (active) {
+    return "⚠️ This pet is currently active. Unequip it first before trading.";
+  }
+
+  if (pet.locked === true) {
+    return "🔒 This pet is locked. Unlock it first before trading.";
+  }
+
+  return "✅ This pet can be added to trade if you still own it.";
+}
+
+function getPetSourceText(source = "unknown") {
+  const normalized = String(source || "unknown").toLowerCase();
+
+  const labels = {
+    monster_pet_drop: "Monster Pet Drop",
+    boss_pet_drop: "Boss Pet Drop",
+    admin_pet: "Admin Given Pet",
+    admin_pet_generated: "Admin Given Pet",
+    admin_generated: "Admin Generated",
+    unknown: "Unknown",
+  };
+
+  return labels[normalized] || source;
+}
+
+async function flexPet(message, player, petId) {
+  if (!petId) {
+    return message.reply(
+      "❌ Usage: `!s flex pet <pet_id>`\n\n" +
+        "Example:\n" +
+        "`!s flex pet baby_wolf_common_pet_12345`"
+    );
+  }
+
+  const pets = normalizePets(player.pets || []);
+  const normalizedPlayer = {
+    ...player,
+    pets,
+  };
+
+  const pet = findPlayerPet(normalizedPlayer, petId);
+
+  if (!pet) {
+    return message.reply("❌ You don’t have that pet.");
+  }
+
+  const petStats = calculatePetStats(pet);
+  const maxLevel = getPetMaxLevel(pet);
+  const { quality, qualityEmoji } = getPetQualityDisplay(pet);
+
+  const embed = new EmbedBuilder()
+    .setColor(getPetColor(pet))
+    .setTitle("🐾 SYXTH PET FLEX")
+    .setDescription(
+      `👤 **${player.username || message.author.username}** is showing a pet:\n\n` +
+        `${pet.emoji || "🐾"} ${qualityEmoji} **${
+          pet.name || "Unknown Pet"
+        }**\n\n` +
+        `━━━━━━━━━━━━━━━━━━`
+    )
+    .addFields(
+      {
+        name: "🏷️ Pet Info",
+        value:
+          `**ID:** \`${pet.id || "no-id"}\`\n` +
+          `**Base ID:** \`${pet.basePetId || pet.id || "no-base-id"}\`\n` +
+          `**Type:** ${String(pet.type || "balanced").toUpperCase()}\n` +
+          `**Quality:** ${qualityEmoji} ${quality}\n` +
+          `**Source:** ${getPetSourceText(pet.source)}`,
+        inline: true,
+      },
+      {
+        name: "📈 Growth",
+        value:
+          `**Level:** Lv.${pet.level || 1}/${maxLevel}\n` +
+          `**EXP:** ${getPetExpDisplaySafe(pet)}\n` +
+          `**Required Level:** Lv.${pet.requiredLevel || 1}\n` +
+          `**Status:** ${formatPetStatus(pet, player.activePetId)}`,
+        inline: true,
+      },
+      {
+        name: "📊 Passive Bonus",
+        value: formatPetStats(petStats),
+        inline: false,
+      },
+      {
+        name: "🤝 Trade Note",
+        value:
+          `${getPetTradeNote(pet, player)}\n\n` +
+          `To trade this pet, use \`!s trade addpet ${pet.id}\` inside the private trade room.`,
+        inline: false,
+      }
+    )
+    .setThumbnail(
+      message.author.displayAvatarURL({
+        dynamic: true,
+      })
+    )
+    .setFooter({
+      text: "Syxth MMORPG Trading Area",
+    })
+    .setTimestamp();
+
+  return message.channel.send({
+    embeds: [embed],
+  });
 }
 
 module.exports = async function flexCommand(message, args = []) {
   const userId = message.author.id;
+  const flexType = normalizeInput(args[0]);
   const itemId = args[0];
 
   if (message.channel.id !== tradeConfig.tradeAreaChannelId) {
     return message.reply(
-      `❌ You can only flex items inside <#${tradeConfig.tradeAreaChannelId}>.`
+      `❌ You can only flex items and pets inside <#${tradeConfig.tradeAreaChannelId}>.`
     );
   }
 
   if (!itemId) {
     return message.reply(
-      "❌ Please specify an item ID or equipped slot.\n\n" +
+      "❌ Please specify an item ID, equipped slot, or pet ID.\n\n" +
         "Examples:\n" +
         "`!s flex <item_id>`\n" +
         "`!s flex weapon`\n" +
-        "`!s flex armor`"
+        "`!s flex armor`\n" +
+        "`!s flex pet <pet_id>`"
     );
   }
 
@@ -528,6 +750,10 @@ module.exports = async function flexCommand(message, args = []) {
   }
 
   const player = playerDoc.data();
+
+  if (flexType === "pet") {
+    return flexPet(message, player, args[1]);
+  }
 
   const inventory = Array.isArray(player.inventory)
     ? player.inventory
@@ -588,7 +814,7 @@ module.exports = async function flexCommand(message, args = []) {
           `**Type:** ${rebalancedItem.type || "Unknown"}\n` +
           `**Quality:** ${qualityEmoji} ${quality}\n` +
           `**Quantity:** ${quantity}\n` +
-          `**Source:** ${formatSourceText(sourceText)}`,
+          `**Source:** ${formatSourceText(sourceText, rebalancedItem.source)}`,
         inline: true,
       },
       {

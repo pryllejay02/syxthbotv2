@@ -4,6 +4,11 @@ const { calculateTotalStats } = require("../utils/statSystem");
 const balanceConfig = require("../data/balanceConfig");
 const shopItems = require("../data/shopItems");
 
+const {
+  getActivePet,
+  applyPetStats,
+} = require("../utils/petSystem");
+
 const EQUIPMENT_SLOTS = [
   "weapon",
   "helmet",
@@ -329,7 +334,16 @@ function getRebalancedPlayer(player = {}) {
 
   const baseStats = getBaseStatsByClassLevel(classId, level);
   const equipment = normalizeEquipment(player.equipment || {});
-  const totalStats = calculateTotalStats(baseStats, equipment);
+
+  const equipmentStats = calculateTotalStats(baseStats, equipment);
+
+  const activePet = getActivePet({
+    ...player,
+    pets: player.pets || [],
+    activePetId: player.activePetId || null,
+  });
+
+  const totalStats = applyPetStats(equipmentStats, activePet);
 
   const hp = Math.min(
     Math.max(0, Number(player.hp ?? totalStats.maxHp)),
@@ -344,6 +358,10 @@ function getRebalancedPlayer(player = {}) {
 
     baseStats,
     equipment,
+
+    pets: player.pets || [],
+    activePetId: player.activePetId || null,
+    activePet,
 
     hp,
     maxHp: totalStats.maxHp,
@@ -370,6 +388,14 @@ function getMedal(index) {
   return `#${index + 1}`;
 }
 
+function getActivePetText(player = {}) {
+  const activePet = player.activePet;
+
+  if (!activePet) return "None";
+
+  return `${activePet.emoji || "🐾"} ${activePet.name || "Unknown Pet"} Lv.${activePet.level || 1}`;
+}
+
 function getLeaderboardConfig(type) {
   const normalized = String(type || "overall").toLowerCase();
 
@@ -383,7 +409,7 @@ function getLeaderboardConfig(type) {
 
     power: {
       title: "⚔️ SYXTH POWER LEADERBOARD",
-      description: "Strongest adventurers based on rebalanced combat stats.",
+      description: "Strongest adventurers based on equipment and active pet stats.",
       getScore: calculatePower,
       scoreLabel: "Power",
     },
@@ -426,6 +452,7 @@ function formatLeaderboardDetails(player = {}, type = "overall") {
       `⭐ Level: **${player.level || 1}**\n` +
       `⚔️ Power: **${player.power}**\n` +
       `👹 Kills: **${player.monsterKills || 0}**\n` +
+      `🐾 Active Pet: **${getActivePetText(player)}**\n` +
       formatWorld(player)
     );
   }
@@ -438,6 +465,7 @@ function formatLeaderboardDetails(player = {}, type = "overall") {
       `❤️ HP: **${player.hp}/${player.maxHp}**\n` +
       `💨 Dodge: **${Number(player.dodge || 0).toFixed(1)}%**\n` +
       `💥 Crit: **${Number(player.crit || 0).toFixed(1)}%**\n` +
+      `🐾 Active Pet: **${getActivePetText(player)}**\n` +
       formatWorld(player)
     );
   }
@@ -445,6 +473,7 @@ function formatLeaderboardDetails(player = {}, type = "overall") {
   if (normalized === "level") {
     return (
       `⭐ Level: **${player.leaderboardScore}**\n` +
+      `🐾 Active Pet: **${getActivePetText(player)}**\n` +
       formatWorld(player)
     );
   }
@@ -452,6 +481,7 @@ function formatLeaderboardDetails(player = {}, type = "overall") {
   if (normalized === "kills") {
     return (
       `👹 Kills: **${player.leaderboardScore}**\n` +
+      `🐾 Active Pet: **${getActivePetText(player)}**\n` +
       formatWorld(player)
     );
   }
@@ -459,6 +489,7 @@ function formatLeaderboardDetails(player = {}, type = "overall") {
   if (normalized === "gold") {
     return (
       `🪙 Gold: **${player.leaderboardScore}**\n` +
+      `🐾 Active Pet: **${getActivePetText(player)}**\n` +
       formatWorld(player)
     );
   }

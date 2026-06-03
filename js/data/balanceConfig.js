@@ -92,6 +92,7 @@ const balanceConfig = {
     trade: 1500,
     party: 1500,
     raid: 2500,
+    pet: 2500,
   },
 
   powerFormula: {
@@ -431,6 +432,99 @@ const balanceConfig = {
     priceMultiplier: {
       Rare: 2,
       Legendary: 4.2,
+    },
+  },
+
+  pet: {
+    maxLevelByQuality: {
+      Common: 20,
+      Rare: 30,
+      Legendary: 40,
+    },
+
+    expGain: {
+      monsterPercent: 20,
+      bossPercent: 15,
+    },
+
+    levelScaling: {
+      attackPerLevel: 0.25,
+      defensePerLevel: 0.2,
+      maxHpPerLevel: 2,
+      dodgePerLevel: 0.01,
+      critPerLevel: 0.015,
+    },
+
+    monsterDrop: {
+      minLevel: 5,
+      commonChance: 5,
+
+      statRolls: {
+        Common: {
+          min: 1.0,
+          max: 1.08,
+        },
+      },
+
+      statCaps: {
+        Common: {
+          attack: 8,
+          defense: 6,
+          maxHp: 45,
+          dodge: 1.5,
+          crit: 2,
+        },
+      },
+
+      priceMultiplier: {
+        Common: 1,
+      },
+    },
+
+    bossDrop: {
+      rareChance: 12,
+      legendaryChance: 4,
+
+      statRolls: {
+        Rare: {
+          min: 1.12,
+          max: 1.28,
+        },
+
+        Legendary: {
+          min: 1.35,
+          max: 1.6,
+        },
+      },
+
+      statCaps: {
+        Rare: {
+          attack: 16,
+          defense: 12,
+          maxHp: 90,
+          dodge: 2.5,
+          crit: 3.5,
+        },
+
+        Legendary: {
+          attack: 28,
+          defense: 22,
+          maxHp: 150,
+          dodge: 4,
+          crit: 5.5,
+        },
+      },
+
+      priceMultiplier: {
+        Rare: 2,
+        Legendary: 4.5,
+      },
+    },
+
+    sellMultiplier: {
+      Common: 0.45,
+      Rare: 0.65,
+      Legendary: 0.8,
     },
   },
 

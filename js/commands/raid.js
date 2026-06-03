@@ -8,6 +8,15 @@ const {
 const { resolvePlayerRevive } = require("../utils/reviveSystem");
 
 const {
+  getActivePet,
+  applyPetStats,
+  addPetExpToActivePet,
+  generateBossPetDrop,
+  addPetToPets,
+  formatDroppedPet,
+} = require("../utils/petSystem");
+
+const {
   getActiveBoss,
   saveDamage,
   getDamageRanking,
@@ -42,7 +51,6 @@ function getRaidRandomBonus(type) {
 
 function calculateDamage(playerAttack, bossDefense, isCritical = false) {
   const baseDamage = Number(playerAttack || 0) - Number(bossDefense || 0);
-
   const randomBonus = getRaidRandomBonus("raidPlayerHitRandomBonus");
 
   let damage = Math.max(1, baseDamage + randomBonus);
@@ -56,7 +64,6 @@ function calculateDamage(playerAttack, bossDefense, isCritical = false) {
 
 function calculateBossDamage(bossAttack, playerDefense, isCritical = false) {
   const baseDamage = Number(bossAttack || 0) - Number(playerDefense || 0);
-
   const randomBonus = getRaidRandomBonus("raidBossHitRandomBonus");
 
   let damage = Math.max(1, baseDamage + randomBonus);
@@ -153,6 +160,21 @@ function getBossDodge(boss = {}) {
 
 function getBossCrit(boss = {}) {
   return Number(boss.crit ?? boss.bossCrit ?? 0);
+}
+
+function getPlayerCombatStats(player = {}) {
+  const baseStats = player.baseStats || {
+    attack: Number(player.attack || 10),
+    defense: Number(player.defense || 5),
+    maxHp: Number(player.maxHp || 100),
+    dodge: Number(player.dodge || 0),
+    crit: Number(player.crit || 0),
+  };
+
+  const equipmentStats = calculateTotalStats(baseStats, player.equipment || {});
+  const activePet = getActivePet(player);
+
+  return applyPetStats(equipmentStats, activePet);
 }
 
 async function autoReviveRaidPlayer(playerRef, userId, maxHp) {
@@ -253,6 +275,41 @@ function formatDroppedItem(item) {
   );
 }
 
+function formatPetRewardLine(petExpResult, droppedPet) {
+  const parts = [];
+
+  if (petExpResult?.activePet && Number(petExpResult.gainedExp || 0) > 0) {
+    let expText =
+      `🐾 Pet EXP: ${petExpResult.activePet.emoji || "🐾"} ` +
+      `**${petExpResult.activePet.name}** +${petExpResult.gainedExp} EXP`;
+
+    if (petExpResult.leveledUp) {
+      expText += ` | 🔥 Lv.${petExpResult.activePet.level}`;
+    }
+
+    parts.push(expText);
+  } else {
+    parts.push("🐾 Pet EXP: No active pet");
+  }
+
+  if (droppedPet) {
+    parts.push(`🐾 Pet Drop:\n${formatDroppedPet(droppedPet)}`);
+  } else {
+    parts.push("🐾 Pet Drop: No pet");
+  }
+
+  return parts.join("\n");
+}
+
+function shouldRollPetDropByPenalty(penalty = {}) {
+  const dropMultiplier = Math.max(0, Number(penalty.dropMultiplier || 0));
+
+  if (dropMultiplier <= 0) return false;
+  if (dropMultiplier >= 1) return true;
+
+  return rollChance(Math.min(100, 100 * dropMultiplier));
+}
+
 async function distributeRewards(worldId, boss, ranking) {
   const rewardLines = [];
   const partyBonusConfig = getPartyBonusConfig();
@@ -274,8 +331,6 @@ async function distributeRewards(worldId, boss, ranking) {
         Number(boss.level || 1)
       );
 
-      // Use saved partyId from the damage record so players do not lose party bonus
-      // if the party disbands before boss death.
       const hasPartyBonus = !!entry.partyId;
 
       const partyGoldBonus = hasPartyBonus
@@ -305,7 +360,6 @@ async function distributeRewards(worldId, boss, ranking) {
 
       const levelResult = applyLevelUp(player, expReward);
       const equipment = player.equipment || {};
-      const totalStats = calculateTotalStats(levelResult.baseStats, equipment);
 
       let legendaryChance = getLegendaryChanceByRank(entry.rank);
 
@@ -336,29 +390,92 @@ async function distributeRewards(worldId, boss, ranking) {
         addItemToInventory(inventory, droppedItem);
       }
 
-      const newGold = Number(player.gold || 0) + goldReward;
+      let pets = [...(player.pets || [])];
 
+      const activePetBefore = getActivePet({
+        ...player,
+        pets,
+        activePetId: player.activePetId || null,
+      });
+
+      const petExpGain = activePetBefore
+        ? Math.floor(
+            Number(expReward || 0) *
+              (Number(balanceConfig.pet?.expGain?.bossPercent || 15) / 100)
+          )
+        : 0;
+
+      const petExpResult = addPetExpToActivePet(
+        {
+          ...player,
+          pets,
+          activePetId: player.activePetId || activePetBefore?.id || null,
+        },
+        petExpGain
+      );
+
+      pets = petExpResult.pets;
+
+      let droppedPet = null;
+
+      if (shouldRollPetDropByPenalty(penalty)) {
+        droppedPet = generateBossPetDrop(Number(boss.level || 1));
+      }
+
+      if (droppedPet) {
+        pets = addPetToPets(pets, droppedPet);
+      }
+
+      const activePetAfterExp = getActivePet({
+        ...player,
+        pets,
+        activePetId:
+          petExpResult.activePet?.id ||
+          activePetBefore?.id ||
+          player.activePetId ||
+          null,
+      });
+
+      const equipmentStats = calculateTotalStats(
+        levelResult.baseStats,
+        equipment
+      );
+
+      const totalStats = applyPetStats(equipmentStats, activePetAfterExp);
+
+      const newGold = Number(player.gold || 0) + goldReward;
       const currentHp = Number(player.hp ?? totalStats.maxHp);
 
-const finalHp = levelResult.leveledUp
-  ? totalStats.maxHp
-  : Math.min(
-      Math.max(0, currentHp),
-      Number(totalStats.maxHp || 100)
-    );
+      const finalHp = levelResult.leveledUp
+        ? totalStats.maxHp
+        : Math.min(
+            Math.max(0, currentHp),
+            Number(totalStats.maxHp || 100)
+          );
 
       transaction.update(playerRef, {
         level: levelResult.level,
         exp: levelResult.exp,
         gold: newGold,
+
         inventory,
+        pets,
+        activePetId:
+          activePetAfterExp?.id ||
+          player.activePetId ||
+          activePetBefore?.id ||
+          null,
+
         baseStats: levelResult.baseStats,
+
         hp: finalHp,
         maxHp: totalStats.maxHp,
+
         attack: totalStats.attack,
         defense: totalStats.defense,
         dodge: totalStats.dodge,
         crit: totalStats.crit,
+
         updatedAt: new Date(),
       });
 
@@ -369,6 +486,8 @@ const finalHp = levelResult.leveledUp
         goldReward,
         expReward,
         droppedItem,
+        droppedPet,
+        petExpResult,
       };
     });
 
@@ -384,6 +503,7 @@ const finalHp = levelResult.leveledUp
             ? "\n" + formatDroppedItem(result.droppedItem)
             : "No item"
         }\n` +
+        `${formatPetRewardLine(result.petExpResult, result.droppedPet)}\n` +
         `📉 Reward: ${result.penalty.label}${
           result.hasPartyBonus ? " + Party Bonus" : ""
         }`
@@ -470,6 +590,7 @@ module.exports = async function raidCommand(message, args = []) {
     );
   }
 
+  const playerCombatStats = getPlayerCombatStats(player);
   const bossRef = db.collection("worldBosses").doc(worldId);
 
   const hitResult = await db.runTransaction(async (transaction) => {
@@ -493,12 +614,14 @@ module.exports = async function raidCommand(message, args = []) {
     }
 
     const bossDodged = rollChance(getBossDodge(currentBoss));
-    const playerCritical = !bossDodged && rollChance(Number(player.crit || 0));
+
+    const playerCritical =
+      !bossDodged && rollChance(Number(playerCombatStats.crit || 0));
 
     const damage = bossDodged
       ? 0
       : calculateDamage(
-          player.attack,
+          playerCombatStats.attack,
           currentBoss.defense,
           playerCritical
         );
@@ -578,10 +701,12 @@ module.exports = async function raidCommand(message, args = []) {
 
       if (targetDoc.exists) {
         const targetPlayer = targetDoc.data();
+        const targetCombatStats = getPlayerCombatStats(targetPlayer);
+
         const targetHp = Number(targetPlayer.hp || 0);
-        const targetMaxHp = Number(targetPlayer.maxHp || 100);
-        const targetDefense = Number(targetPlayer.defense || 0);
-        const targetDodge = Number(targetPlayer.dodge || 0);
+        const targetMaxHp = Number(targetCombatStats.maxHp || 100);
+        const targetDefense = Number(targetCombatStats.defense || 0);
+        const targetDodge = Number(targetCombatStats.dodge || 0);
 
         if (targetHp > 0) {
           const dodged = rollChance(targetDodge);
@@ -624,6 +749,11 @@ module.exports = async function raidCommand(message, args = []) {
             } else {
               await targetRef.update({
                 hp: newTargetHp,
+                maxHp: targetCombatStats.maxHp,
+                attack: targetCombatStats.attack,
+                defense: targetCombatStats.defense,
+                dodge: targetCombatStats.dodge,
+                crit: targetCombatStats.crit,
                 updatedAt: new Date(),
               });
 

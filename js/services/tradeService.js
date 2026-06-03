@@ -159,12 +159,19 @@ function getTradeSide(trade, userId) {
     return {
       side: "player1",
       otherSide: "player2",
+
       userId: trade.player1Id,
       otherUserId: trade.player2Id,
+
       itemsKey: "player1Items",
       otherItemsKey: "player2Items",
+
+      petsKey: "player1Pets",
+      otherPetsKey: "player2Pets",
+
       goldKey: "player1Gold",
       otherGoldKey: "player2Gold",
+
       confirmKey: "player1Confirmed",
       otherConfirmKey: "player2Confirmed",
     };
@@ -174,12 +181,19 @@ function getTradeSide(trade, userId) {
     return {
       side: "player2",
       otherSide: "player1",
+
       userId: trade.player2Id,
       otherUserId: trade.player1Id,
+
       itemsKey: "player2Items",
       otherItemsKey: "player1Items",
+
+      petsKey: "player2Pets",
+      otherPetsKey: "player1Pets",
+
       goldKey: "player2Gold",
       otherGoldKey: "player1Gold",
+
       confirmKey: "player2Confirmed",
       otherConfirmKey: "player1Confirmed",
     };

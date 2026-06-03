@@ -2,6 +2,18 @@ const shopItems = require("../data/shopItems");
 const { getQualityEmoji } = require("./qualitySystem");
 const balanceConfig = require("../data/balanceConfig");
 
+const VALID_BOSS_DROP_QUALITIES = ["Rare", "Legendary"];
+
+function normalizeQuality(quality = "Rare") {
+  const normalized = String(quality || "Rare").toLowerCase();
+
+  const matchedQuality = VALID_BOSS_DROP_QUALITIES.find(
+    (itemQuality) => itemQuality.toLowerCase() === normalized
+  );
+
+  return matchedQuality || "Rare";
+}
+
 function getNearestItemLevel(bossLevel) {
   if (typeof balanceConfig.getNearestItemLevel === "function") {
     return balanceConfig.getNearestItemLevel(bossLevel);
@@ -32,10 +44,6 @@ function getNearestItemLevel(bossLevel) {
   }
 
   return nearest;
-}
-
-function normalizeQuality(quality = "Rare") {
-  return ["Rare", "Legendary"].includes(quality) ? quality : "Rare";
 }
 
 function getRollMultiplier(quality = "Rare") {
@@ -138,17 +146,21 @@ function getPriceMultiplier(quality = "Rare") {
   );
 }
 
-function cleanItemName(name, quality) {
+function cleanItemName(name, quality = "Rare") {
+  const normalizedQuality = normalizeQuality(quality);
+
   const baseName = String(name || "Unknown Item").replace(
     /^(Common|Rare|Legendary|Starter)\s+/i,
     ""
   );
 
-  return `${quality} ${baseName}`;
+  return `${normalizedQuality} ${baseName}`;
 }
 
 function getPossibleBossDropItems(itemLevel) {
   return shopItems.filter((item) => {
+    if (!item) return false;
+
     const type = String(item.type || "").toLowerCase();
 
     if (type === "consumable") return false;
@@ -208,14 +220,17 @@ function generateBossDrop(bossLevel, quality = "Rare") {
 function addItemToInventory(inventory = [], droppedItem) {
   if (!droppedItem) return inventory;
 
-  const existingItemIndex = inventory.findIndex(
-    (item) =>
+  const existingItemIndex = inventory.findIndex((item) => {
+    if (!item) return false;
+
+    return (
       item.baseItemId === droppedItem.baseItemId &&
       item.quality === droppedItem.quality &&
       item.source === droppedItem.source &&
       JSON.stringify(item.stats || {}) ===
         JSON.stringify(droppedItem.stats || {})
-  );
+    );
+  });
 
   if (existingItemIndex !== -1) {
     inventory[existingItemIndex].quantity =
@@ -231,8 +246,14 @@ function addItemToInventory(inventory = [], droppedItem) {
 }
 
 module.exports = {
+  VALID_BOSS_DROP_QUALITIES,
+
+  normalizeQuality,
   getNearestItemLevel,
+  getRollMultiplier,
+  capPercentStat,
   scaleStatsByQuality,
+
   generateBossDrop,
   addItemToInventory,
 };

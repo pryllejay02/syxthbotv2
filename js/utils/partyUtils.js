@@ -3,6 +3,10 @@ const partyConfig = require("../data/partyConfig");
 
 const ACTIVE_PARTY_STATUSES = ["forming", "ready", "raiding"];
 
+function normalizeStatus(status = "") {
+  return String(status || "").toLowerCase().trim();
+}
+
 function getWorldPartyConfig(worldId) {
   if (!worldId) return null;
 
@@ -14,7 +18,7 @@ function getArray(value) {
 }
 
 function uniqueIds(ids = []) {
-  return [...new Set(ids.filter(Boolean))];
+  return [...new Set(getArray(ids).filter(Boolean))];
 }
 
 function getMentions(message) {
@@ -59,7 +63,7 @@ async function getPlayers(userIds = []) {
 }
 
 function isActivePartyStatus(status) {
-  return ACTIVE_PARTY_STATUSES.includes(status || "ready");
+  return ACTIVE_PARTY_STATUSES.includes(normalizeStatus(status));
 }
 
 function isUserInParty(party = {}, userId) {
@@ -103,15 +107,17 @@ async function findUsersWithActiveParties(userIds = []) {
   const busy = [];
   const free = [];
 
-  for (const userId of uniqueUserIds) {
-    const activeParty = await findUserActiveParty(userId);
+  await Promise.all(
+    uniqueUserIds.map(async (userId) => {
+      const activeParty = await findUserActiveParty(userId);
 
-    if (activeParty) {
-      busy.push(userId);
-    } else {
-      free.push(userId);
-    }
-  }
+      if (activeParty) {
+        busy.push(userId);
+      } else {
+        free.push(userId);
+      }
+    })
+  );
 
   return {
     busy,
@@ -216,6 +222,7 @@ function getRemainingPartySlots(party = {}) {
 
 module.exports = {
   ACTIVE_PARTY_STATUSES,
+  normalizeStatus,
   getWorldPartyConfig,
   getArray,
   uniqueIds,

@@ -18,6 +18,19 @@ const {
   getTradeSide,
 } = require("../services/tradeService");
 
+const {
+  normalizePets,
+  normalizeTradePets,
+  getActivePet,
+  findPlayerPet: findPlayerPetById,
+  canTradePet,
+  addPetToTradeOffer,
+  removePetFromTradeOffer,
+  removePetFromPlayerPets,
+  addPetToPets,
+  formatTradePets,
+} = require("../utils/petSystem");
+
 function normalizeId(value) {
   return String(value || "").toLowerCase().trim();
 }
@@ -334,7 +347,10 @@ function rebalanceItemStats(item = {}) {
       compatibleClasses:
         sourceItem.compatibleClasses || item.compatibleClasses || ["all"],
 
-      price: Math.max(0, Math.floor(Number(sourceItem.price || item.price || 0))),
+      price: Math.max(
+        0,
+        Math.floor(Number(sourceItem.price || item.price || 0))
+      ),
 
       description:
         sourceItem.description || item.description || "Consumable item.",
@@ -406,7 +422,6 @@ function rebalanceItemStats(item = {}) {
     ),
 
     description: makeDescription(rebalancedStats),
-
     stats: rebalancedStats,
 
     emoji: baseItem.emoji || item.emoji || "📦",
@@ -472,7 +487,9 @@ function findInventoryIndexByItem(inventory = [], targetItem = {}) {
 
     if (score <= 0) return;
 
-    const sameQuality = String(item.quality || "") === String(targetItem.quality || "");
+    const sameQuality =
+      String(item.quality || "") === String(targetItem.quality || "");
+
     const sameItemStats = sameStats(item.stats || {}, targetItem.stats || {});
 
     if (!isConsumable(targetItem) && (!sameQuality || !sameItemStats)) {
@@ -591,7 +608,9 @@ function isItemEquipped(player = {}, itemId) {
 
 function hasEquippedTradeItem(player = {}, tradeItems = []) {
   return normalizeTradeItems(tradeItems).some(
-    (item) => isItemEquipped(player, item.id) || isItemEquipped(player, item.baseItemId)
+    (item) =>
+      isItemEquipped(player, item.id) ||
+      isItemEquipped(player, item.baseItemId)
   );
 }
 
@@ -648,12 +667,46 @@ function removeItemFromOffer(items = [], itemId) {
   });
 }
 
+function getPlayerActivePetId(player = {}) {
+  const activePet = getActivePet({
+    ...player,
+    pets: player.pets || [],
+    activePetId: player.activePetId || null,
+  });
+
+  return player.activePetId || activePet?.id || null;
+}
+
 function normalizeTradeForDisplay(trade = {}) {
   return {
     ...trade,
     player1Items: normalizeTradeItems(trade.player1Items || []),
     player2Items: normalizeTradeItems(trade.player2Items || []),
+    player1Pets: normalizeTradePets(trade.player1Pets || []),
+    player2Pets: normalizeTradePets(trade.player2Pets || []),
   };
+}
+
+function formatTradeWindowWithPets(trade = {}) {
+  const normalizedTrade = normalizeTradeForDisplay(trade);
+  const baseWindow = formatTradeWindow(normalizedTrade);
+
+  const player1Pets = normalizeTradePets(normalizedTrade.player1Pets || []);
+  const player2Pets = normalizeTradePets(normalizedTrade.player2Pets || []);
+
+  if (!player1Pets.length && !player2Pets.length) {
+    return baseWindow;
+  }
+
+  return (
+    `${baseWindow}\n\n` +
+    `━━━━━━━━━━━━━━━━━━\n` +
+    `🐾 **PET OFFERS**\n\n` +
+    `👤 **${normalizedTrade.player1Username || "Player 1"} Pets**\n` +
+    `${formatTradePets(player1Pets)}\n\n` +
+    `👤 **${normalizedTrade.player2Username || "Player 2"} Pets**\n` +
+    `${formatTradePets(player2Pets)}`
+  );
 }
 
 function resetConfirmationsPayload() {
@@ -663,6 +716,10 @@ function resetConfirmationsPayload() {
     player2Confirmed: false,
     updatedAt: new Date(),
   };
+}
+
+function getPetsKey(side = {}) {
+  return side.petsKey || (side.side === "player1" ? "player1Pets" : "player2Pets");
 }
 
 async function scheduleTradeChannelDelete(guild, channelId) {
@@ -737,8 +794,14 @@ async function completeTrade(message, trade) {
     const p1Inventory = normalizeInventory(player1.inventory || []);
     const p2Inventory = normalizeInventory(player2.inventory || []);
 
+    let p1Pets = normalizePets(player1.pets || []);
+    let p2Pets = normalizePets(player2.pets || []);
+
     const player1Items = normalizeTradeItems(latestTrade.player1Items || []);
     const player2Items = normalizeTradeItems(latestTrade.player2Items || []);
+
+    const player1Pets = normalizeTradePets(latestTrade.player1Pets || []);
+    const player2Pets = normalizeTradePets(latestTrade.player2Pets || []);
 
     const p1Gold = Number(player1.gold || 0);
     const p2Gold = Number(player2.gold || 0);
@@ -806,6 +869,36 @@ async function completeTrade(message, trade) {
       };
     }
 
+    for (const tradePet of player1Pets) {
+      const ownedPet = findPlayerPetById(player1, tradePet.id);
+      const tradeCheck = canTradePet(ownedPet, getPlayerActivePetId(player1));
+
+      if (!ownedPet || !tradeCheck.ok) {
+        transaction.update(tradeRef, resetConfirmationsPayload());
+
+        return {
+          ok: false,
+          message:
+            "❌ Player 1 no longer has a valid trade pet. Confirmations reset.",
+        };
+      }
+    }
+
+    for (const tradePet of player2Pets) {
+      const ownedPet = findPlayerPetById(player2, tradePet.id);
+      const tradeCheck = canTradePet(ownedPet, getPlayerActivePetId(player2));
+
+      if (!ownedPet || !tradeCheck.ok) {
+        transaction.update(tradeRef, resetConfirmationsPayload());
+
+        return {
+          ok: false,
+          message:
+            "❌ Player 2 no longer has a valid trade pet. Confirmations reset.",
+        };
+      }
+    }
+
     for (const item of player1Items) {
       const removed = removeItemFromInventory(
         p1Inventory,
@@ -846,14 +939,56 @@ async function completeTrade(message, trade) {
       addItemToInventory(p1Inventory, item);
     }
 
+    for (const pet of player1Pets) {
+      const removed = removePetFromPlayerPets(p1Pets, pet.id);
+
+      if (!removed.ok) {
+        transaction.update(tradeRef, resetConfirmationsPayload());
+
+        return {
+          ok: false,
+          message:
+            "❌ Failed to remove Player 1 pet during trade. Confirmations reset.",
+        };
+      }
+
+      p1Pets = removed.pets;
+      p2Pets = addPetToPets(p2Pets, {
+        ...removed.pet,
+        active: false,
+      });
+    }
+
+    for (const pet of player2Pets) {
+      const removed = removePetFromPlayerPets(p2Pets, pet.id);
+
+      if (!removed.ok) {
+        transaction.update(tradeRef, resetConfirmationsPayload());
+
+        return {
+          ok: false,
+          message:
+            "❌ Failed to remove Player 2 pet during trade. Confirmations reset.",
+        };
+      }
+
+      p2Pets = removed.pets;
+      p1Pets = addPetToPets(p1Pets, {
+        ...removed.pet,
+        active: false,
+      });
+    }
+
     transaction.update(player1Ref, {
       inventory: p1Inventory,
+      pets: p1Pets,
       gold: p1Gold - player1GoldOffer + player2GoldOffer,
       updatedAt: new Date(),
     });
 
     transaction.update(player2Ref, {
       inventory: p2Inventory,
+      pets: p2Pets,
       gold: p2Gold - player2GoldOffer + player1GoldOffer,
       updatedAt: new Date(),
     });
@@ -933,6 +1068,8 @@ module.exports = async function tradeCommand(message, args = []) {
       player2Username: targetPlayer.username || targetUser.username,
       player1Items: [],
       player2Items: [],
+      player1Pets: [],
+      player2Pets: [],
       player1Gold: 0,
       player2Gold: 0,
       player1Confirmed: false,
@@ -1007,7 +1144,7 @@ module.exports = async function tradeCommand(message, args = []) {
       channelId: channel.id,
     });
 
-    await channel.send(formatTradeWindow(openedTrade));
+    await channel.send(formatTradeWindowWithPets(openedTrade));
 
     return message.reply(
       `✅ Trade accepted. Private trade room created: <#${channel.id}>`
@@ -1049,7 +1186,7 @@ module.exports = async function tradeCommand(message, args = []) {
   }
 
   if (subCommand === "status") {
-    return message.reply(formatTradeWindow(normalizeTradeForDisplay(activeTrade)));
+    return message.reply(formatTradeWindowWithPets(activeTrade));
   }
 
   if (subCommand === "add") {
@@ -1180,9 +1317,7 @@ module.exports = async function tradeCommand(message, args = []) {
 
       transaction.update(tradeRef, {
         [latestSide.itemsKey]: updatedItems,
-        player1Confirmed: false,
-        player2Confirmed: false,
-        updatedAt: new Date(),
+        ...resetConfirmationsPayload(),
       });
 
       transaction.update(playerRef, {
@@ -1204,7 +1339,7 @@ module.exports = async function tradeCommand(message, args = []) {
 
     return message.reply(
       `✅ Added **${result.item.name} x${result.quantity}** to the trade.\n\n` +
-        formatTradeWindow(result.trade)
+        formatTradeWindowWithPets(result.trade)
     );
   }
 
@@ -1267,9 +1402,7 @@ module.exports = async function tradeCommand(message, args = []) {
 
       transaction.update(tradeRef, {
         [latestSide.itemsKey]: updatedItems,
-        player1Confirmed: false,
-        player2Confirmed: false,
-        updatedAt: new Date(),
+        ...resetConfirmationsPayload(),
       });
 
       return {
@@ -1284,7 +1417,187 @@ module.exports = async function tradeCommand(message, args = []) {
 
     return message.reply(
       `✅ Removed item from trade.\n\n` +
-        formatTradeWindow(result.trade)
+        formatTradeWindowWithPets(result.trade)
+    );
+  }
+
+  if (subCommand === "addpet") {
+    const petId = args[1];
+
+    if (!petId) {
+      return message.reply("❌ Usage: `!s trade addpet <pet_id>`");
+    }
+
+    const tradeRef = db.collection("trades").doc(activeTrade.id);
+    const playerRef = db.collection("players").doc(userId);
+
+    const result = await db.runTransaction(async (transaction) => {
+      const tradeDoc = await transaction.get(tradeRef);
+      const playerDoc = await transaction.get(playerRef);
+
+      if (!tradeDoc.exists) {
+        return {
+          ok: false,
+          message: "❌ This trade no longer exists.",
+        };
+      }
+
+      if (!playerDoc.exists) {
+        return {
+          ok: false,
+          message: "❌ You no longer have a character.",
+        };
+      }
+
+      const latestTrade = {
+        id: tradeDoc.id,
+        ...tradeDoc.data(),
+      };
+
+      if (latestTrade.status !== "active") {
+        return {
+          ok: false,
+          message: "❌ This trade is no longer active.",
+        };
+      }
+
+      const latestSide = getTradeSide(latestTrade, userId);
+
+      if (!latestSide) {
+        return {
+          ok: false,
+          message: "❌ You are not part of this trade.",
+        };
+      }
+
+      const player = playerDoc.data();
+      const pet = findPlayerPetById(player, petId);
+      const tradeCheck = canTradePet(pet, getPlayerActivePetId(player));
+
+      if (!pet || !tradeCheck.ok) {
+        return {
+          ok: false,
+          message: tradeCheck.message || "❌ You don’t have that pet.",
+        };
+      }
+
+      const petsKey = getPetsKey(latestSide);
+      const currentPets = normalizeTradePets(latestTrade[petsKey] || []);
+
+      if (currentPets.some((tradePet) => tradePet.id === pet.id)) {
+        return {
+          ok: false,
+          message: "❌ That pet is already in your trade offer.",
+        };
+      }
+
+      const updatedPets = addPetToTradeOffer(currentPets, pet);
+
+      const updatedTrade = normalizeTradeForDisplay({
+        ...latestTrade,
+        [petsKey]: updatedPets,
+        player1Confirmed: false,
+        player2Confirmed: false,
+      });
+
+      transaction.update(tradeRef, {
+        [petsKey]: updatedPets,
+        ...resetConfirmationsPayload(),
+      });
+
+      return {
+        ok: true,
+        pet,
+        trade: updatedTrade,
+      };
+    });
+
+    if (!result.ok) {
+      return message.reply(result.message || "❌ Failed to add pet.");
+    }
+
+    return message.reply(
+      `✅ Added ${result.pet.emoji || "🐾"} **${result.pet.name}** to the trade.\n\n` +
+        formatTradeWindowWithPets(result.trade)
+    );
+  }
+
+  if (subCommand === "removepet") {
+    const petId = args[1];
+
+    if (!petId) {
+      return message.reply("❌ Usage: `!s trade removepet <pet_id>`");
+    }
+
+    const tradeRef = db.collection("trades").doc(activeTrade.id);
+
+    const result = await db.runTransaction(async (transaction) => {
+      const tradeDoc = await transaction.get(tradeRef);
+
+      if (!tradeDoc.exists) {
+        return {
+          ok: false,
+          message: "❌ This trade no longer exists.",
+        };
+      }
+
+      const latestTrade = {
+        id: tradeDoc.id,
+        ...tradeDoc.data(),
+      };
+
+      if (latestTrade.status !== "active") {
+        return {
+          ok: false,
+          message: "❌ This trade is no longer active.",
+        };
+      }
+
+      const latestSide = getTradeSide(latestTrade, userId);
+
+      if (!latestSide) {
+        return {
+          ok: false,
+          message: "❌ You are not part of this trade.",
+        };
+      }
+
+      const petsKey = getPetsKey(latestSide);
+      const currentPets = normalizeTradePets(latestTrade[petsKey] || []);
+      const updatedPets = removePetFromTradeOffer(currentPets, petId);
+
+      if (updatedPets.length === currentPets.length) {
+        return {
+          ok: false,
+          message: "❌ That pet is not in your trade offer.",
+        };
+      }
+
+      const updatedTrade = normalizeTradeForDisplay({
+        ...latestTrade,
+        [petsKey]: updatedPets,
+        player1Confirmed: false,
+        player2Confirmed: false,
+      });
+
+      transaction.update(tradeRef, {
+        [petsKey]: updatedPets,
+        ...resetConfirmationsPayload(),
+      });
+
+      return {
+        ok: true,
+        trade: updatedTrade,
+      };
+    });
+
+    if (!result.ok) {
+      return message.reply(result.message || "❌ Failed to remove pet.");
+    }
+
+    return message.reply(
+      `✅ Removed pet from trade.\n\n` +
+        formatTradeWindowWithPets(result.trade)
     );
   }
 
@@ -1358,9 +1671,7 @@ module.exports = async function tradeCommand(message, args = []) {
 
       transaction.update(tradeRef, {
         [latestSide.goldKey]: amount,
-        player1Confirmed: false,
-        player2Confirmed: false,
-        updatedAt: new Date(),
+        ...resetConfirmationsPayload(),
       });
 
       return {
@@ -1376,7 +1687,7 @@ module.exports = async function tradeCommand(message, args = []) {
 
     return message.reply(
       `✅ Gold offer updated to **${result.amount} Gold**.\n\n` +
-        formatTradeWindow(result.trade)
+        formatTradeWindowWithPets(result.trade)
     );
   }
 
@@ -1445,7 +1756,7 @@ module.exports = async function tradeCommand(message, args = []) {
     return message.reply(
       `✅ You confirmed the trade.\n\n` +
         `Waiting for the other player.\n\n` +
-        formatTradeWindow(confirmResult.trade)
+        formatTradeWindowWithPets(confirmResult.trade)
     );
   }
 
@@ -1467,6 +1778,8 @@ module.exports = async function tradeCommand(message, args = []) {
     "❌ Unknown trade command.\n\n" +
       "`!s trade add <item_id> <qty>`\n" +
       "`!s trade remove <item_id>`\n" +
+      "`!s trade addpet <pet_id>`\n" +
+      "`!s trade removepet <pet_id>`\n" +
       "`!s trade gold <amount>`\n" +
       "`!s trade confirm`\n" +
       "`!s trade cancel`\n" +

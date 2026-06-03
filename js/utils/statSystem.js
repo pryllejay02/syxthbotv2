@@ -1,5 +1,14 @@
 const balanceConfig = require("../data/balanceConfig");
 
+const EQUIPMENT_SLOTS = [
+  "weapon",
+  "helmet",
+  "armor",
+  "gloves",
+  "pants",
+  "boots",
+];
+
 function getDefaultEquipment() {
   return {
     weapon: null,
@@ -21,20 +30,28 @@ function getDefaultStats() {
   };
 }
 
+function safeNumber(value, fallback = 0) {
+  const number = Number(value);
+
+  if (Number.isNaN(number)) return fallback;
+
+  return number;
+}
+
 function normalizeStats(stats = {}) {
   return {
-    attack: Number(stats.attack || 0),
-    defense: Number(stats.defense || 0),
-    maxHp: Number(stats.maxHp || 0),
-    dodge: Number(stats.dodge || 0),
-    crit: Number(stats.crit || 0),
+    attack: safeNumber(stats.attack, 0),
+    defense: safeNumber(stats.defense, 0),
+    maxHp: safeNumber(stats.maxHp, 0),
+    dodge: safeNumber(stats.dodge, 0),
+    crit: safeNumber(stats.crit, 0),
   };
 }
 
 function getStatCaps() {
   return {
-    dodge: Number(balanceConfig.statCaps?.dodge || 60),
-    crit: Number(balanceConfig.statCaps?.crit || 75),
+    dodge: Number(balanceConfig.statCaps?.dodge || 50),
+    crit: Number(balanceConfig.statCaps?.crit || 65),
   };
 }
 
@@ -47,19 +64,21 @@ function calculateTotalStats(
     ...(baseStats || {}),
   };
 
-  let attack = Number(safeBaseStats.attack || 10);
-  let defense = Number(safeBaseStats.defense || 5);
-  let maxHp = Number(safeBaseStats.maxHp || 100);
+  let attack = safeNumber(safeBaseStats.attack, 10);
+  let defense = safeNumber(safeBaseStats.defense, 5);
+  let maxHp = safeNumber(safeBaseStats.maxHp, 100);
 
-  let dodge = Number(safeBaseStats.dodge || 0);
-  let crit = Number(safeBaseStats.crit || 0);
+  let dodge = safeNumber(safeBaseStats.dodge, 0);
+  let crit = safeNumber(safeBaseStats.crit, 0);
 
   const safeEquipment = {
     ...getDefaultEquipment(),
     ...(equipment || {}),
   };
 
-  Object.values(safeEquipment).forEach((item) => {
+  EQUIPMENT_SLOTS.forEach((slot) => {
+    const item = safeEquipment[slot];
+
     if (!item || !item.stats) return;
 
     const itemStats = normalizeStats(item.stats);
@@ -92,6 +111,7 @@ function calculateTotalStats(
 }
 
 module.exports = {
+  EQUIPMENT_SLOTS,
   getDefaultEquipment,
   getDefaultStats,
   normalizeStats,

@@ -11,6 +11,14 @@ const {
   resolvePlayerRevive,
 } = require("../utils/reviveSystem");
 
+const {
+  getActivePet,
+  applyPetStats,
+  calculatePetStats,
+  getPetMaxLevel,
+  getPetRequiredExp,
+} = require("../utils/petSystem");
+
 const balanceConfig = require("../data/balanceConfig");
 const shopItems = require("../data/shopItems");
 
@@ -532,13 +540,23 @@ function getRebalancedPlayer(player = {}) {
   const classId = player.classId || "swordsman";
 
   const baseStats = getBaseStatsByClassLevel(classId, level);
+
   const equipment = normalizeEquipment({
     ...player,
     classId,
   });
 
   const inventory = normalizeInventory(player.inventory || []);
-  const totalStats = calculateTotalStats(baseStats, equipment);
+
+  const equipmentStats = calculateTotalStats(baseStats, equipment);
+
+  const activePet = getActivePet({
+    ...player,
+    pets: player.pets || [],
+    activePetId: player.activePetId || null,
+  });
+
+  const totalStats = applyPetStats(equipmentStats, activePet);
 
   const hp = Math.min(
     Math.max(0, Number(player.hp ?? totalStats.maxHp)),
@@ -554,6 +572,10 @@ function getRebalancedPlayer(player = {}) {
     baseStats,
     equipment,
     inventory,
+
+    pets: player.pets || [],
+    activePetId: player.activePetId || null,
+    activePet,
 
     hp,
     maxHp: totalStats.maxHp,
@@ -614,6 +636,39 @@ function getWeaponDisplay(player) {
   };
 }
 
+function formatPetStats(stats = {}) {
+  const parts = [];
+
+  if (stats.attack) parts.push(`⚔️ +${stats.attack}`);
+  if (stats.defense) parts.push(`🛡️ +${stats.defense}`);
+  if (stats.maxHp) parts.push(`❤️ +${stats.maxHp}`);
+  if (stats.dodge) parts.push(`💨 +${stats.dodge}%`);
+  if (stats.crit) parts.push(`💥 +${stats.crit}%`);
+
+  return parts.length ? parts.join("\n") : "No bonus stats";
+}
+
+function getActivePetDisplay(player = {}) {
+  const activePet = player.activePet;
+
+  if (!activePet) {
+    return "No active pet\nUse `!s pet list` to view your pets.";
+  }
+
+  const maxLevel = getPetMaxLevel(activePet);
+  const requiredExp = getPetRequiredExp(activePet.level || 1);
+  const petStats = calculatePetStats(activePet);
+
+  return (
+    `${activePet.emoji || "🐾"} **${activePet.name || "Unknown Pet"}**\n` +
+    `**Quality:** ${activePet.qualityEmoji || ""} ${activePet.quality || "Common"}\n` +
+    `**Type:** ${String(activePet.type || "balanced").toUpperCase()}\n` +
+    `**Level:** ${activePet.level || 1}/${maxLevel}\n` +
+    `**EXP:** ${activePet.exp || 0}/${requiredExp}\n` +
+    `**Bonus:**\n${formatPetStats(petStats)}`
+  );
+}
+
 function shouldPersistRebalancedPlayer(oldPlayer = {}, newPlayer = {}) {
   const trackedKeys = [
     "level",
@@ -667,6 +722,9 @@ async function persistRebalancedPlayer(playerRef, oldPlayer, rebalancedPlayer) {
     baseStats: rebalancedPlayer.baseStats,
     equipment: rebalancedPlayer.equipment,
     inventory: rebalancedPlayer.inventory,
+
+    pets: rebalancedPlayer.pets || [],
+    activePetId: rebalancedPlayer.activePetId || null,
 
     hp: rebalancedPlayer.hp,
     maxHp: rebalancedPlayer.maxHp,
@@ -731,6 +789,12 @@ module.exports = async function profileCommand(message) {
 
   const monsterKills = Number(rebalancedPlayer.monsterKills || 0);
   const retreats = Number(rebalancedPlayer.retreats || 0);
+
+  const pets = Array.isArray(rebalancedPlayer.pets)
+    ? rebalancedPlayer.pets
+    : [];
+
+  const activePet = rebalancedPlayer.activePet;
 
   const requiredExp = level >= MAX_LEVEL ? 0 : getRequiredExp(level);
 
@@ -801,8 +865,15 @@ module.exports = async function profileCommand(message) {
           `**Gold:** ${gold}\n` +
           `**Inventory Items:** ${(rebalancedPlayer.inventory || []).length}\n` +
           `**Equipped Slots:** ${equippedCount}/6\n` +
+          `**Pets Owned:** ${pets.length}\n` +
+          `**Active Pet:** ${activePet ? activePet.name : "None"}\n` +
           `**Revive:** ${reviveText}`,
         inline: true,
+      },
+      {
+        name: "🐾 Active Pet",
+        value: getActivePetDisplay(rebalancedPlayer),
+        inline: false,
       },
       {
         name: "📊 Adventure Record",

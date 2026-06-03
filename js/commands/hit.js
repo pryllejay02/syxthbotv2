@@ -6,6 +6,15 @@ const { getQualityEmoji } = require("../utils/qualitySystem");
 const balanceConfig = require("../data/balanceConfig");
 const shopItems = require("../data/shopItems");
 
+const {
+  getActivePet,
+  applyPetStats,
+  addPetExpToActivePet,
+  generateMonsterPetDrop,
+  addPetToPets,
+  formatDroppedPet,
+} = require("../utils/petSystem");
+
 function getNormalReviveSeconds() {
   return Number(balanceConfig.revive?.normalSeconds || 60);
 }
@@ -534,7 +543,10 @@ module.exports = async function hitCommand(message) {
 
     const baseStats = getBaseStatsByClassLevel(classId, level);
     const equipment = normalizeEquipment(player.equipment || {});
-    const currentStats = calculateTotalStats(baseStats, equipment);
+    const activePet = getActivePet(player);
+
+    const equipmentStats = calculateTotalStats(baseStats, equipment);
+    const currentStats = applyPetStats(equipmentStats, activePet);
 
     let playerHp = Math.min(
       Number(player.hp ?? currentStats.maxHp),
@@ -595,15 +607,6 @@ module.exports = async function hitCommand(message) {
       const newGold =
         Number(player.gold ?? 0) + Number(battle.monsterGold || 0);
 
-      const totalStats = calculateTotalStats(
-        levelResult.baseStats,
-        equipment
-      );
-
-      const finalHp = levelResult.leveledUp
-        ? totalStats.maxHp
-        : Math.min(playerHp, Number(totalStats.maxHp || 100));
-
       const inventory = [...(player.inventory || [])];
 
       const droppedItem = generateMonsterDrop(
@@ -612,6 +615,58 @@ module.exports = async function hitCommand(message) {
 
       addItemToInventory(inventory, droppedItem);
 
+      let pets = [...(player.pets || [])];
+
+      const petExpGain = activePet
+        ? Math.floor(
+            Number(battle.monsterExp || 0) *
+              (Number(balanceConfig.pet?.expGain?.monsterPercent || 20) / 100)
+          )
+        : 0;
+
+      const petExpResult = addPetExpToActivePet(
+        {
+          ...player,
+          pets,
+          activePetId: player.activePetId || activePet?.id || null,
+        },
+        petExpGain
+      );
+
+      pets = petExpResult.pets;
+
+      const droppedPet = generateMonsterPetDrop(
+        Number(battle.monsterLevel || 1)
+      );
+
+      if (droppedPet) {
+        pets = addPetToPets(pets, droppedPet);
+      }
+
+      const activePetAfterExp = getActivePet({
+        ...player,
+        pets,
+        activePetId:
+          petExpResult.activePet?.id ||
+          activePet?.id ||
+          player.activePetId ||
+          null,
+      });
+
+      const equipmentStatsAfterLevel = calculateTotalStats(
+        levelResult.baseStats,
+        equipment
+      );
+
+      const totalStats = applyPetStats(
+        equipmentStatsAfterLevel,
+        activePetAfterExp
+      );
+
+      const finalHp = levelResult.leveledUp
+        ? totalStats.maxHp
+        : Math.min(playerHp, Number(totalStats.maxHp || 100));
+
       transaction.update(playerRef, {
         level: levelResult.level,
         exp: levelResult.exp,
@@ -619,6 +674,10 @@ module.exports = async function hitCommand(message) {
 
         inventory,
         equipment,
+
+        pets,
+        activePetId:
+          activePetAfterExp?.id || player.activePetId || activePet?.id || null,
 
         baseStats: levelResult.baseStats,
 
@@ -651,6 +710,8 @@ module.exports = async function hitCommand(message) {
         levelResult,
         totalStats,
         droppedItem,
+        droppedPet,
+        petExpResult,
       };
     }
 
@@ -775,6 +836,25 @@ module.exports = async function hitCommand(message) {
       Number(result.battle.monsterLevel || 1) >= getMonsterDropMinLevel()
     ) {
       reply += `\n🎁 **Loot Drop:** None\n`;
+    }
+
+    if (result.droppedPet) {
+      reply += formatDroppedPet(result.droppedPet);
+    }
+
+    if (result.petExpResult?.activePet && result.petExpResult.gainedExp > 0) {
+      reply +=
+        `\n🐾 **Pet EXP:** ${result.petExpResult.activePet.emoji || "🐾"} ` +
+        `**${result.petExpResult.activePet.name}** gained ` +
+        `**${result.petExpResult.gainedExp} EXP**.`;
+
+      if (result.petExpResult.leveledUp) {
+        reply +=
+          `\n🔥 **PET LEVEL UP!** ` +
+          `${result.petExpResult.activePet.emoji || "🐾"} ` +
+          `**${result.petExpResult.activePet.name}** is now ` +
+          `**Lv.${result.petExpResult.activePet.level}**.`;
+      }
     }
 
     if (result.levelResult.leveledUp) {

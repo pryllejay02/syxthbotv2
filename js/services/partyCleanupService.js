@@ -12,6 +12,12 @@ const EMPTY_PARTY_STALE_MS = Number(
   process.env.EMPTY_PARTY_STALE_MS || 10 * 60 * 1000
 );
 
+// Give raiding parties longer before cleanup.
+// This prevents party data from being deleted while a boss raid is still active.
+const RAIDING_PARTY_STALE_MS = Number(
+  process.env.RAIDING_PARTY_STALE_MS || 3 * 60 * 60 * 1000
+);
+
 const ACTIVE_PARTY_STATUSES = ["forming", "ready", "raiding"];
 
 let cleanupTimer = null;
@@ -52,6 +58,16 @@ function getNonBotMembers(channel) {
 
 function getArray(value) {
   return Array.isArray(value) ? value : [];
+}
+
+function isRaidingParty(party = {}) {
+  return String(party.status || "").toLowerCase() === "raiding";
+}
+
+function getPartyStaleMs(party = {}) {
+  return isRaidingParty(party)
+    ? RAIDING_PARTY_STALE_MS
+    : EMPTY_PARTY_STALE_MS;
 }
 
 async function findGuildChannel(client, channelId) {
@@ -100,6 +116,8 @@ function shouldDeleteParty({
   nonBotMembers,
   age,
 }) {
+  const staleMs = getPartyStaleMs(party);
+
   const hasNoMembers = members.length === 0;
   const hasNoVoiceChannel = !party.voiceChannelId;
 
@@ -111,7 +129,7 @@ function shouldDeleteParty({
     };
   }
 
-  if (hasNoVoiceChannel) {
+  if (hasNoVoiceChannel && age >= staleMs) {
     return {
       deleteParty: true,
       deleteChannel: false,
@@ -121,13 +139,15 @@ function shouldDeleteParty({
 
   const isEmptyTooLong =
     nonBotMembers.length === 0 &&
-    age >= EMPTY_PARTY_STALE_MS;
+    age >= staleMs;
 
   if (isEmptyTooLong) {
     return {
       deleteParty: true,
       deleteChannel: true,
-      reason: "voice channel empty too long",
+      reason: isRaidingParty(party)
+        ? "raiding voice channel empty too long"
+        : "voice channel empty too long",
     };
   }
 
@@ -135,13 +155,15 @@ function shouldDeleteParty({
     members.length <= 1 &&
     invited.length === 0 &&
     nonBotMembers.length === 0 &&
-    age >= EMPTY_PARTY_STALE_MS;
+    age >= staleMs;
 
   if (noPendingActivity) {
     return {
       deleteParty: true,
       deleteChannel: true,
-      reason: "no pending party activity",
+      reason: isRaidingParty(party)
+        ? "raiding party stale too long"
+        : "no pending party activity",
     };
   }
 
@@ -179,8 +201,13 @@ async function cleanupParties(client) {
 
       const members = getArray(party.members);
       const invited = getArray(party.invited);
+      const staleMs = getPartyStaleMs(party);
 
       if (!party.voiceChannelId) {
+        if (members.length > 0 && age < staleMs) {
+          continue;
+        }
+
         await deletePartyDocument(doc.ref);
         deletedParties++;
 
@@ -194,6 +221,10 @@ async function cleanupParties(client) {
       const found = await findGuildChannel(client, party.voiceChannelId);
 
       if (!found) {
+        if (members.length > 0 && age < staleMs) {
+          continue;
+        }
+
         await deletePartyDocument(doc.ref);
         deletedParties++;
 

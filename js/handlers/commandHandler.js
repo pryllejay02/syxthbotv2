@@ -22,6 +22,7 @@ const raidCommand = require("../commands/raid");
 const tradeCommand = require("../commands/trade");
 const flexCommand = require("../commands/flex");
 const adminCommand = require("../commands/admin");
+const petCommand = require("../commands/pet");
 const creatorAutoCommand = require("../admin/autoplay");
 
 const balanceConfig = require("../data/balanceConfig");
@@ -49,6 +50,8 @@ const DEFAULT_COMMAND_COOLDOWNS = {
   trade: 1500,
   party: 1500,
   raid: 2500,
+  pet: 2500,
+  pets: 2500,
 };
 
 // Uses balanceConfig.commandCooldowns, but keeps defaults as fallback
@@ -69,6 +72,10 @@ function getCooldownAction(command, args = []) {
 
   if (command === "party") {
     return `party:${String(args[0] || "help").toLowerCase()}`;
+  }
+
+  if (command === "pet" || command === "pets") {
+    return `pet:${String(args[0] || "show").toLowerCase()}`;
   }
 
   return command;
@@ -193,6 +200,8 @@ module.exports = async function commandHandler(client, message, prefix) {
       flex: () => flexCommand(message, args),
       admin: () => adminCommand(message, args),
       creator: () => creatorAutoCommand(message, args),
+      pet: () => petCommand(message, args),
+      pets: () => petCommand(message, args),
     };
 
     if (commands[command]) {

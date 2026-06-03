@@ -10,6 +10,30 @@ function getMonsterDropText() {
   );
 }
 
+function getPetDropText() {
+  const commonChance = Number(balanceConfig.pet?.monsterDrop?.commonChance || 0);
+  const rareChance = Number(balanceConfig.pet?.bossDrop?.rareChance || 0);
+  const legendaryChance = Number(
+    balanceConfig.pet?.bossDrop?.legendaryChance || 0
+  );
+
+  return (
+    `Common Pet: **${commonChance}%**, ` +
+    `Rare Pet: **${rareChance}%**, ` +
+    `Legendary Pet: **${legendaryChance}%**`
+  );
+}
+
+function getPetLevelCapText() {
+  const caps = balanceConfig.pet?.maxLevelByQuality || {};
+
+  return (
+    `Common: **Lv.${Number(caps.Common || 20)}**, ` +
+    `Rare: **Lv.${Number(caps.Rare || 30)}**, ` +
+    `Legendary: **Lv.${Number(caps.Legendary || 40)}**`
+  );
+}
+
 module.exports = async function adminHelp(message) {
   const maxLevel = Number(balanceConfig.MAX_LEVEL || balanceConfig.maxLevel || 99);
   const maxBuyQuantity = Number(balanceConfig.shop?.maxBuyQuantity || 99);
@@ -21,6 +45,7 @@ module.exports = async function adminHelp(message) {
   const freeReviveHpPercent = Number(balanceConfig.revive?.freeReviveHpPercent || 50);
   const raidReviveHpPercent = Number(balanceConfig.revive?.raidReviveHpPercent || 50);
   const monsterDropMinLevel = Number(balanceConfig.monsterDrop?.minLevel || 5);
+  const petDropMinLevel = Number(balanceConfig.pet?.monsterDrop?.minLevel || 5);
   const scalePerTier = Number(balanceConfig.item?.scalePerTier || 0.85);
 
   const page1 =
@@ -42,6 +67,17 @@ module.exports = async function adminHelp(message) {
 
     `━━━━━━━━━━━━━━━━━━\n\n` +
 
+    `🐾 **Pet Admin Commands**\n` +
+    `\`!s admin givepet @player <pet_id> <Common/Rare/Legendary> <qty>\`\n` +
+    `Give a generated pet to a player.\n` +
+    `Max Qty: **${maxAdminItemQuantity}**\n\n` +
+    `Examples:\n` +
+    `\`!s admin givepet @player baby_wolf Common 1\`\n` +
+    `\`!s admin givepet @player shadow_wolf Rare 1\`\n` +
+    `\`!s admin givepet @player ember_drake Legendary 1\`\n\n` +
+
+    `━━━━━━━━━━━━━━━━━━\n\n` +
+
     `🧙 **Player Commands**\n` +
     `\`!s admin givegold @player <amount>\`\n` +
     `Give gold to a player.\n\n` +
@@ -56,7 +92,7 @@ module.exports = async function adminHelp(message) {
     `Revive a defeated player using the revive HP percentage from balance config.\n\n` +
 
     `\`!s admin inventory @player\`\n` +
-    `View inventory summary.`;
+    `View inventory and pet summary.`;
 
   const page2 =
     `🛠️ **Player Repair Commands**\n` +
@@ -65,7 +101,7 @@ module.exports = async function adminHelp(message) {
 
     `\`!s admin repairplayer @player\`\n` +
     `Repair missing or outdated player data fields without deleting progress.\n` +
-    `Also recalculates stats using current class, level, equipment, and balance config.\n\n` +
+    `Also recalculates stats using current class, level, equipment, pets, and balance config.\n\n` +
 
     `━━━━━━━━━━━━━━━━━━\n\n` +
 
@@ -92,6 +128,9 @@ module.exports = async function adminHelp(message) {
     `Raid Revive HP: **${raidReviveHpPercent}%**\n` +
     `Monster Drops Start: **Lv.${monsterDropMinLevel}**\n` +
     `Monster Drop Rates: ${getMonsterDropText()}\n` +
+    `Pet Drops Start: **Lv.${petDropMinLevel}**\n` +
+    `Pet Drop Rates: ${getPetDropText()}\n` +
+    `Pet Level Caps: ${getPetLevelCapText()}\n` +
     `Item Tier Scale: **${scalePerTier} per tier**`;
 
   const page3 =
@@ -112,16 +151,18 @@ module.exports = async function adminHelp(message) {
 
     `⚠️ **Admin Notes**\n` +
     `• Use these commands only inside the admin channel.\n` +
-    `• Item and gold commands affect player economy.\n` +
+    `• Item, pet, and gold commands affect player economy and progression.\n` +
     `• Reset commands are useful when a player gets stuck.\n` +
     `• \`repairroom\` fixes players with missing or broken private rooms.\n` +
     `• \`repairplayer\` fixes missing old player fields without deleting progress.\n` +
     `• \`setlevel\` resets EXP to 0 and recalculates stats from balance config.\n` +
+    `• \`setlevel\`, \`heal\`, \`revive\`, and \`repairplayer\` include active pet stat bonuses.\n` +
     `• Normal monster EXP and Gold now use the formula in \`balanceConfig.monsterRewards\`.\n` +
     `• Fixed monster EXP/Gold only applies when a monster has \`rewardOverride: true\`.\n` +
     `• \`giveitem\` supports Common, Rare, and Legendary.\n` +
     `• \`givebossitem\` supports Rare and Legendary only.\n` +
-    `• Admin item quantity is capped at **${maxAdminItemQuantity}** per command.\n` +
+    `• \`givepet\` supports Common, Rare, and Legendary pets.\n` +
+    `• Admin item and pet quantity is capped at **${maxAdminItemQuantity}** per command.\n` +
     `• Player shop purchases are capped at **${maxBuyQuantity}** per buy command.\n` +
     `• Rest and instant revive cost is currently **${restCost} Gold**.\n` +
     `• \`summonboss\` supports tier names and exact boss IDs.\n` +

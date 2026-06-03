@@ -1,6 +1,11 @@
 const { db } = require("../../firebase/firebase");
 const { getQualityEmoji } = require("./qualitySystem");
 
+const {
+  normalizeTradePets,
+  formatTradePets,
+} = require("./petSystem");
+
 const ACTIVE_TRADE_STATUSES = ["pending", "active", "processing"];
 
 function normalizeId(value) {
@@ -182,9 +187,48 @@ function getTradeExpiryText(trade = {}) {
   return `${minutes}m ${seconds}s remaining`;
 }
 
+function getTradeStatusText(trade = {}) {
+  const status = String(trade.status || "unknown").toLowerCase();
+
+  if (status === "pending") return "Pending Invite";
+  if (status === "active") return "Active";
+  if (status === "processing") return "Processing";
+  if (status === "completed") return "Completed";
+  if (status === "cancelled") return "Cancelled";
+  if (status === "declined") return "Declined";
+
+  return status;
+}
+
+function formatPlayerTradeSection({
+  label = "Player",
+  userId = "unknown",
+  confirmed = false,
+  gold = 0,
+  items = [],
+  pets = [],
+}) {
+  const safePets = normalizeTradePets(pets || []);
+
+  return (
+    `👤 **${label}:** <@${userId || "unknown"}>\n` +
+    `Confirmation: **${formatConfirmStatus(confirmed)}**\n` +
+    `Gold Offer: **${Number(gold || 0)} Gold**\n\n` +
+
+    `🎒 **Items Offered:**\n` +
+    `${formatTradeItems(items)}\n\n` +
+
+    `🐾 **Pets Offered:**\n` +
+    `${formatTradePets(safePets)}`
+  );
+}
+
 function formatTradeWindow(trade = {}) {
   const player1Items = getArray(trade.player1Items);
   const player2Items = getArray(trade.player2Items);
+
+  const player1Pets = normalizeTradePets(trade.player1Pets || []);
+  const player2Pets = normalizeTradePets(trade.player2Pets || []);
 
   const player1Gold = Number(trade.player1Gold || 0);
   const player2Gold = Number(trade.player2Gold || 0);
@@ -197,28 +241,36 @@ function formatTradeWindow(trade = {}) {
   return (
     `🤝 **SYXTH TRADE WINDOW**\n\n` +
     `Trade ID: \`${trade.id || trade.tradeId || "unknown"}\`\n` +
-    `Status: **${trade.status || "unknown"}**${expiryText}\n\n` +
+    `Status: **${getTradeStatusText(trade)}**${expiryText}\n\n` +
 
     `━━━━━━━━━━━━━━━━━━\n\n` +
 
-    `👤 **Player 1:** <@${trade.player1Id || "unknown"}>\n` +
-    `Confirmation: **${formatConfirmStatus(trade.player1Confirmed)}**\n` +
-    `Gold Offer: **${player1Gold} Gold**\n\n` +
-    `🎒 **Items Offered:**\n` +
-    `${formatTradeItems(player1Items)}\n\n` +
+    formatPlayerTradeSection({
+      label: "Player 1",
+      userId: trade.player1Id,
+      confirmed: trade.player1Confirmed,
+      gold: player1Gold,
+      items: player1Items,
+      pets: player1Pets,
+    }) +
 
-    `━━━━━━━━━━━━━━━━━━\n\n` +
+    `\n\n━━━━━━━━━━━━━━━━━━\n\n` +
 
-    `👤 **Player 2:** <@${trade.player2Id || "unknown"}>\n` +
-    `Confirmation: **${formatConfirmStatus(trade.player2Confirmed)}**\n` +
-    `Gold Offer: **${player2Gold} Gold**\n\n` +
-    `🎒 **Items Offered:**\n` +
-    `${formatTradeItems(player2Items)}\n\n` +
+    formatPlayerTradeSection({
+      label: "Player 2",
+      userId: trade.player2Id,
+      confirmed: trade.player2Confirmed,
+      gold: player2Gold,
+      items: player2Items,
+      pets: player2Pets,
+    }) +
 
-    `━━━━━━━━━━━━━━━━━━\n\n` +
+    `\n\n━━━━━━━━━━━━━━━━━━\n\n` +
     `Commands:\n` +
     `\`!s trade add <item_id> <qty>\`\n` +
     `\`!s trade remove <item_id>\`\n` +
+    `\`!s trade addpet <pet_id>\`\n` +
+    `\`!s trade removepet <pet_id>\`\n` +
     `\`!s trade gold <amount>\`\n` +
     `\`!s trade confirm\`\n` +
     `\`!s trade cancel\`\n` +
@@ -228,14 +280,23 @@ function formatTradeWindow(trade = {}) {
 
 module.exports = {
   ACTIVE_TRADE_STATUSES,
+
   normalizeId,
   getArray,
+
   getMentionedUser,
   getPlayer,
+
   isUserInTrade,
   findActiveTrade,
+
   isStarterItem,
   findInventoryItem,
+
+  formatClass,
+  formatItemStats,
+  getQualityDisplay,
+
   formatTradeItem,
   formatTradeItems,
   formatTradeWindow,

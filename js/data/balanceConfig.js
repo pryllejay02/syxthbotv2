@@ -254,15 +254,9 @@ const balanceConfig = {
   item: {
     levels: ITEM_LEVELS,
 
-    // Used for ATK, DEF, and HP only.
-    // Lowered to stop late-game gear from overpowering base stats.
     scalePerTier: 0.38,
-
-    // Used for Dodge and Crit only.
-    // Lowered to control evasion/critical stacking.
     percentScalePerTier: 0.03,
 
-    // Per Common shop item cap before Rare/Legendary roll multipliers.
     statCaps: {
       dodge: 2,
       crit: 3,
@@ -457,7 +451,9 @@ const balanceConfig = {
 
     monsterDrop: {
       minLevel: 5,
-      commonChance: 5,
+
+      // Common pets drop from normal monsters.
+      commonChance: 15,
 
       statRolls: {
         Common: {
@@ -482,8 +478,9 @@ const balanceConfig = {
     },
 
     bossDrop: {
-      rareChance: 12,
-      legendaryChance: 4,
+      // Rare and Legendary pets drop from boss raids.
+      rareChance: 10,
+      legendaryChance: 2,
 
       statRolls: {
         Rare: {

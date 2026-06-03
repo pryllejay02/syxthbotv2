@@ -529,6 +529,52 @@ function makeProgressBar(current, required, size = 10) {
   return "▰".repeat(filled) + "▱".repeat(empty);
 }
 
+function formatPlayerExpReward(levelResult = {}, gainedExp = 0, totalStats = {}) {
+  const expGain = Math.max(0, Number(gainedExp || 0));
+  const level = Math.max(1, Number(levelResult.level || 1));
+  const exp = Math.max(0, Number(levelResult.exp || 0));
+  const nextLevelExp = Number(levelResult.nextLevelExp || 0);
+
+  const isMaxLevel =
+    level >= MAX_LEVEL ||
+    !Number.isFinite(nextLevelExp) ||
+    nextLevelExp <= 0;
+
+  const expDisplay = isMaxLevel ? "MAX" : `${exp}/${nextLevelExp}`;
+  const progressBar = isMaxLevel
+    ? "▰▰▰▰▰▰▰▰▰▰"
+    : makeProgressBar(exp, nextLevelExp);
+
+  let text =
+    `\n⭐ **PLAYER EXP GAINED**\n` +
+    `🧙 You gained **+${expGain} EXP**\n` +
+    `📈 Level: **Lv.${level}/${MAX_LEVEL}**\n` +
+    `⭐ EXP: **${expDisplay}**\n` +
+    `${progressBar}`;
+
+  if (levelResult.leveledUp) {
+    text +=
+      `\n🔥 **LEVEL UP!** You are now **Level ${level}**.`;
+
+    if (Number(levelResult.levelUps || 0) > 1) {
+      text += ` (**+${levelResult.levelUps} levels**)`;
+    }
+
+    text +=
+      `\n❤️ HP fully restored: **${totalStats.maxHp}/${totalStats.maxHp}**\n` +
+      `⚔️ Attack: **${totalStats.attack}**\n` +
+      `🛡️ Defense: **${totalStats.defense}**\n` +
+      `💨 Dodge: **${Number(totalStats.dodge || 0).toFixed(1)}%**\n` +
+      `💥 Crit: **${Number(totalStats.crit || 0).toFixed(1)}%**`;
+  }
+
+  if (isMaxLevel) {
+    text += `\n👑 You reached max level **${MAX_LEVEL}**!`;
+  }
+
+  return text;
+}
+
 function getPetExpDisplaySafe(pet = {}) {
   if (typeof getPetExpDisplay === "function") {
     return getPetExpDisplay(pet);
@@ -903,8 +949,13 @@ module.exports = async function hitCommand(message) {
     }
 
     reply += `⚔️ Your Damage: **${result.playerDamage}**\n\n`;
-    reply += `+${result.battle.monsterExp} EXP\n`;
-    reply += `+${result.battle.monsterGold} Gold\n`;
+    reply += `🪙 Gold: **+${result.battle.monsterGold}**\n`;
+
+    reply += formatPlayerExpReward(
+      result.levelResult,
+      result.battle.monsterExp,
+      result.totalStats
+    );
 
     if (result.droppedItem) {
       reply += formatDroppedItem(result.droppedItem);
@@ -919,22 +970,6 @@ module.exports = async function hitCommand(message) {
     }
 
     reply += formatPetExpReward(result.petExpResult);
-
-    if (result.levelResult.leveledUp) {
-      reply += `\n🔥 **LEVEL UP!**\n`;
-      reply += `You are now **Level ${result.levelResult.level}**.\n`;
-      reply += `❤️ HP fully restored: ${result.totalStats.maxHp}/${result.totalStats.maxHp}\n`;
-      reply += `⚔️ Attack: ${result.totalStats.attack}\n`;
-      reply += `🛡️ Defense: ${result.totalStats.defense}\n`;
-      reply += `💨 Dodge: ${Number(result.totalStats.dodge || 0).toFixed(1)}%\n`;
-      reply += `💥 Crit: ${Number(result.totalStats.crit || 0).toFixed(1)}%\n`;
-    }
-
-    if (result.levelResult.level >= MAX_LEVEL) {
-      reply += `\n👑 You reached max level **${MAX_LEVEL}**!`;
-    } else {
-      reply += `\nEXP: ${result.levelResult.exp}/${result.levelResult.nextLevelExp}`;
-    }
 
     return message.reply(reply);
   }

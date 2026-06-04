@@ -1,9 +1,11 @@
+const petEmojis = require("./petEmojis");
+
 module.exports = [
   // COMMON PETS — Monster Drops Only
   {
     id: "baby_wolf",
     name: "Baby Wolf",
-    emoji: "🐺",
+    emoji: petEmojis.baby_wolf || "🐺",
     type: "attack",
     dropGroup: "monster",
     allowedQualities: ["Common"],
@@ -21,7 +23,7 @@ module.exports = [
   {
     id: "stone_turtle",
     name: "Stone Turtle",
-    emoji: "🐢",
+    emoji: petEmojis.stone_turtle || "🐢",
     type: "tank",
     dropGroup: "monster",
     allowedQualities: ["Common"],
@@ -39,7 +41,7 @@ module.exports = [
   {
     id: "forest_sprite",
     name: "Forest Sprite",
-    emoji: "🧚",
+    emoji: petEmojis.forest_sprite || "🧚",
     type: "support",
     dropGroup: "monster",
     allowedQualities: ["Common"],
@@ -57,7 +59,7 @@ module.exports = [
   {
     id: "young_hawk",
     name: "Young Hawk",
-    emoji: "🦅",
+    emoji: petEmojis.young_hawk || "🦅",
     type: "critical",
     dropGroup: "monster",
     allowedQualities: ["Common"],
@@ -75,7 +77,7 @@ module.exports = [
   {
     id: "moon_rabbit",
     name: "Moon Rabbit",
-    emoji: "🐇",
+    emoji: petEmojis.moon_rabbit || "🐇",
     type: "evasion",
     dropGroup: "monster",
     allowedQualities: ["Common"],
@@ -93,7 +95,7 @@ module.exports = [
   {
     id: "wild_boar",
     name: "Wild Boar",
-    emoji: "🐗",
+    emoji: petEmojis.wild_boar || "🐗",
     type: "balanced",
     dropGroup: "monster",
     allowedQualities: ["Common"],
@@ -112,7 +114,7 @@ module.exports = [
   {
     id: "shadow_wolf",
     name: "Shadow Wolf",
-    emoji: "🐺",
+    emoji: petEmojis.shadow_wolf || "🐺",
     type: "attack",
     dropGroup: "boss",
     allowedQualities: ["Rare"],
@@ -130,7 +132,7 @@ module.exports = [
   {
     id: "spirit_deer",
     name: "Spirit Deer",
-    emoji: "🦌",
+    emoji: petEmojis.spirit_deer || "🦌",
     type: "support",
     dropGroup: "boss",
     allowedQualities: ["Rare"],
@@ -148,7 +150,7 @@ module.exports = [
   {
     id: "ironback_turtle",
     name: "Ironback Turtle",
-    emoji: "🛡️",
+    emoji: petEmojis.ironback_turtle || "🛡️",
     type: "tank",
     dropGroup: "boss",
     allowedQualities: ["Rare"],
@@ -166,7 +168,7 @@ module.exports = [
   {
     id: "mystic_owl",
     name: "Mystic Owl",
-    emoji: "🦉",
+    emoji: petEmojis.mystic_owl || "🦉",
     type: "critical",
     dropGroup: "boss",
     allowedQualities: ["Rare"],
@@ -184,7 +186,7 @@ module.exports = [
   {
     id: "night_panther",
     name: "Night Panther",
-    emoji: "🐆",
+    emoji: petEmojis.night_panther || "🐆",
     type: "evasion",
     dropGroup: "boss",
     allowedQualities: ["Rare"],
@@ -203,7 +205,7 @@ module.exports = [
   {
     id: "ember_drake",
     name: "Ember Drake",
-    emoji: "🐉",
+    emoji: petEmojis.ember_drake || "🐉",
     type: "attack",
     dropGroup: "boss",
     allowedQualities: ["Legendary"],
@@ -221,7 +223,7 @@ module.exports = [
   {
     id: "golden_lion",
     name: "Golden Lion",
-    emoji: "🦁",
+    emoji: petEmojis.golden_lion || "🦁",
     type: "balanced",
     dropGroup: "boss",
     allowedQualities: ["Legendary"],
@@ -239,7 +241,7 @@ module.exports = [
   {
     id: "phoenix_chick",
     name: "Phoenix Chick",
-    emoji: "🐦",
+    emoji: petEmojis.phoenix_chick || "🐦",
     type: "support",
     dropGroup: "boss",
     allowedQualities: ["Legendary"],
@@ -257,7 +259,7 @@ module.exports = [
   {
     id: "ancient_dragonling",
     name: "Ancient Dragonling",
-    emoji: "🐲",
+    emoji: petEmojis.ancient_dragonling || "🐲",
     type: "tank",
     dropGroup: "boss",
     allowedQualities: ["Legendary"],

@@ -7,15 +7,17 @@ const { db } = require("../../firebase/firebase");
 const tradeConfig = require("../data/tradeConfig");
 
 function cleanChannelName(name) {
-  return String(name || "player")
+  const cleanName = String(name || "player")
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 40);
+
+  return cleanName || "player";
 }
 
-function getTradeChannelName(trade) {
+function getTradeChannelName(trade = {}) {
   const player1 = cleanChannelName(trade.player1Username || trade.player1Id);
   const player2 = cleanChannelName(trade.player2Username || trade.player2Id);
   const suffix = String(trade.id || trade.tradeId || Date.now()).slice(-4);
@@ -23,10 +25,34 @@ function getTradeChannelName(trade) {
   return `trade-${player1}-${player2}-${suffix}`.slice(0, 90);
 }
 
-async function createPrivateTradeChannel(message, trade) {
+async function getExistingTradeChannel(guild, channelId) {
+  if (!guild || !channelId) return null;
+
+  const channel = await guild.channels
+    .fetch(channelId)
+    .catch(() => null);
+
+  if (!channel) return null;
+  if (channel.type !== ChannelType.GuildText) return null;
+
+  return channel;
+}
+
+async function createPrivateTradeChannel(message, trade = {}) {
   if (!message.guild) return null;
   if (!tradeConfig.tradeCategoryId) return null;
   if (!trade?.player1Id || !trade?.player2Id) return null;
+
+  if (trade.channelId) {
+    const existingChannel = await getExistingTradeChannel(
+      message.guild,
+      trade.channelId
+    );
+
+    if (existingChannel) {
+      return existingChannel;
+    }
+  }
 
   const category = await message.guild.channels
     .fetch(tradeConfig.tradeCategoryId)
@@ -39,6 +65,19 @@ async function createPrivateTradeChannel(message, trade) {
 
     return null;
   }
+
+  if (category.type !== ChannelType.GuildCategory) {
+    console.error(
+      `Trade category ID is not a category: ${tradeConfig.tradeCategoryId}`
+    );
+
+    return null;
+  }
+
+  const botId =
+    message.guild.members.me?.id ||
+    message.client?.user?.id ||
+    null;
 
   const permissionOverwrites = [
     {
@@ -67,9 +106,9 @@ async function createPrivateTradeChannel(message, trade) {
     },
   ];
 
-  if (message.client?.user?.id) {
+  if (botId) {
     permissionOverwrites.push({
-      id: message.client.user.id,
+      id: botId,
       allow: [
         PermissionsBitField.Flags.ViewChannel,
         PermissionsBitField.Flags.SendMessages,
@@ -83,7 +122,7 @@ async function createPrivateTradeChannel(message, trade) {
     .create({
       name: getTradeChannelName(trade),
       type: ChannelType.GuildText,
-      parent: tradeConfig.tradeCategoryId,
+      parent: category.id,
       permissionOverwrites,
       reason: "Syxth MMORPG private trade room created.",
     })
@@ -130,6 +169,15 @@ async function resetTradeConfirmations(tradeId) {
     return {
       ok: false,
       message: "Trade no longer exists.",
+    };
+  }
+
+  const trade = tradeDoc.data();
+
+  if (!["active", "processing"].includes(String(trade.status || "").toLowerCase())) {
+    return {
+      ok: false,
+      message: "Trade is no longer active.",
     };
   }
 
@@ -228,6 +276,13 @@ function canUseTradeChannel(message, trade) {
     return {
       ok: false,
       message: "❌ You are not part of this trade.",
+    };
+  }
+
+  if (String(trade.status || "").toLowerCase() !== "active") {
+    return {
+      ok: false,
+      message: "❌ This trade is no longer active.",
     };
   }
 

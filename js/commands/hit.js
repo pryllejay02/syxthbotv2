@@ -16,6 +16,7 @@ const {
   getPetMaxLevel,
   getPetRequiredExp,
   getPetExpDisplay,
+  getPetDisplayEmoji,
 } = require("../utils/petSystem");
 
 function getNormalReviveSeconds() {
@@ -605,6 +606,8 @@ function formatPetExpReward(petExpResult) {
   }
 
   const pet = petExpResult.activePet;
+  const displayEmoji = getPetDisplayEmoji(pet);
+
   const level = Math.max(1, Number(pet.level || 1));
   const maxLevel = getPetMaxLevel(pet);
   const currentExp = Math.max(0, Number(pet.exp || 0));
@@ -619,7 +622,7 @@ function formatPetExpReward(petExpResult) {
 
   let text =
     `\n🐾 **PET EXP GAINED**\n` +
-    `${pet.emoji || "🐾"} **${pet.name || "Unknown Pet"}** gained **+${gainedExp} EXP**\n` +
+    `${displayEmoji} **${pet.name || "Unknown Pet"}** gained **+${gainedExp} EXP**\n` +
     `📈 Level: **Lv.${level}/${maxLevel}**\n` +
     `⭐ EXP: **${getPetExpDisplaySafe(pet)}**\n` +
     `${progressBar}`;
@@ -627,7 +630,7 @@ function formatPetExpReward(petExpResult) {
   if (petExpResult.leveledUp) {
     text +=
       `\n🔥 **PET LEVEL UP!** ` +
-      `${pet.emoji || "🐾"} **${pet.name || "Unknown Pet"}** is now **Lv.${level}**.`;
+      `${displayEmoji} **${pet.name || "Unknown Pet"}** is now **Lv.${level}**.`;
   }
 
   return text;

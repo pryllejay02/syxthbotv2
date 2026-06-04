@@ -22,6 +22,7 @@ const {
   formatPetListPage,
   getPetMaxLevel,
   getPetExpDisplay,
+  getPetDisplayEmoji,
   calculatePetStats,
   formatPetStats,
   formatPetStatus,
@@ -113,9 +114,10 @@ function formatPetInfo(pet, player = {}) {
   const maxLevel = getPetMaxLevel(pet);
   const petStats = calculatePetStats(pet);
   const sellPrice = getPetSellPrice(pet);
+  const displayEmoji = getPetDisplayEmoji(pet);
 
   return (
-    `${pet.emoji || "🐾"} **${pet.name || "Unknown Pet"}**\n\n` +
+    `${displayEmoji} **${pet.name || "Unknown Pet"}**\n\n` +
     `Quality: **${pet.qualityEmoji || ""} ${pet.quality || "Common"}**\n` +
     `Type: **${String(pet.type || "balanced").toUpperCase()}**\n` +
     `Level: **${pet.level || 1}/${maxLevel}**\n` +
@@ -275,7 +277,7 @@ module.exports = async function petCommand(message, args = []) {
     }
 
     return message.reply(
-      `✅ ${result.pet.emoji || "🐾"} **${result.pet.name}** is now your active pet.`
+      `✅ ${getPetDisplayEmoji(result.pet)} **${result.pet.name}** is now your active pet.`
     );
   }
 
@@ -313,7 +315,9 @@ module.exports = async function petCommand(message, args = []) {
       return message.reply("✅ You have no active pet equipped.");
     }
 
-    return message.reply(`✅ Unequipped **${result.pet.name}**.`);
+    return message.reply(
+      `✅ Unequipped ${getPetDisplayEmoji(result.pet)} **${result.pet.name}**.`
+    );
   }
 
   if (subCommand === "lock" || subCommand === "unlock") {
@@ -357,7 +361,9 @@ module.exports = async function petCommand(message, args = []) {
     }
 
     return message.reply(
-      `${subCommand === "lock" ? "🔒 Locked" : "🔓 Unlocked"} **${result.pet.name}**.`
+      `${subCommand === "lock" ? "🔒 Locked" : "🔓 Unlocked"} ${getPetDisplayEmoji(
+        result.pet
+      )} **${result.pet.name}**.`
     );
   }
 
@@ -475,7 +481,7 @@ module.exports = async function petCommand(message, args = []) {
     }
 
     return message.reply(
-      `${result.pet.emoji || "🐾"} Sold **${result.pet.name}**!\n\n` +
+      `${getPetDisplayEmoji(result.pet)} Sold **${result.pet.name}**!\n\n` +
         `Quality: **${result.pet.qualityEmoji || ""} ${result.pet.quality}**\n` +
         `Level: **${result.pet.level}/${getPetMaxLevel(result.pet)}**\n` +
         `💰 Gold Earned: **${result.sellPrice} Gold**\n` +

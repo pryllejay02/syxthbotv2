@@ -28,7 +28,7 @@ const {
   removePetFromTradeOffer,
   removePetFromPlayerPets,
   addPetToPets,
-  formatTradePets,
+  getPetDisplayEmoji,
 } = require("../utils/petSystem");
 
 function normalizeId(value) {
@@ -689,24 +689,8 @@ function normalizeTradeForDisplay(trade = {}) {
 
 function formatTradeWindowWithPets(trade = {}) {
   const normalizedTrade = normalizeTradeForDisplay(trade);
-  const baseWindow = formatTradeWindow(normalizedTrade);
 
-  const player1Pets = normalizeTradePets(normalizedTrade.player1Pets || []);
-  const player2Pets = normalizeTradePets(normalizedTrade.player2Pets || []);
-
-  if (!player1Pets.length && !player2Pets.length) {
-    return baseWindow;
-  }
-
-  return (
-    `${baseWindow}\n\n` +
-    `━━━━━━━━━━━━━━━━━━\n` +
-    `🐾 **PET OFFERS**\n\n` +
-    `👤 **${normalizedTrade.player1Username || "Player 1"} Pets**\n` +
-    `${formatTradePets(player1Pets)}\n\n` +
-    `👤 **${normalizedTrade.player2Username || "Player 2"} Pets**\n` +
-    `${formatTradePets(player2Pets)}`
-  );
+  return formatTradeWindow(normalizedTrade);
 }
 
 function resetConfirmationsPayload() {
@@ -1517,7 +1501,7 @@ module.exports = async function tradeCommand(message, args = []) {
     }
 
     return message.reply(
-      `✅ Added ${result.pet.emoji || "🐾"} **${result.pet.name}** to the trade.\n\n` +
+      `✅ Added ${getPetDisplayEmoji(result.pet)} **${result.pet.name}** to the trade.\n\n` +
         formatTradeWindowWithPets(result.trade)
     );
   }

@@ -16,6 +16,32 @@ function getArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function getTimestampMillis(value) {
+  if (!value) return 0;
+
+  if (typeof value === "number") {
+    return value;
+  }
+
+  if (value.toMillis) {
+    return value.toMillis();
+  }
+
+  if (value.toDate) {
+    return value.toDate().getTime();
+  }
+
+  const parsedNumber = Number(value);
+
+  if (!Number.isNaN(parsedNumber)) {
+    return parsedNumber;
+  }
+
+  const parsedDate = new Date(value).getTime();
+
+  return Number.isNaN(parsedDate) ? 0 : parsedDate;
+}
+
 function getMentionedUser(message) {
   if (!message?.mentions?.users) return null;
 
@@ -43,6 +69,18 @@ function isUserInTrade(trade = {}, userId) {
   return trade.player1Id === userId || trade.player2Id === userId;
 }
 
+function isTradeExpired(trade = {}) {
+  if (String(trade.status || "").toLowerCase() !== "pending") {
+    return false;
+  }
+
+  const expiresAt = getTimestampMillis(trade.expiresAt);
+
+  if (!expiresAt) return false;
+
+  return Date.now() >= expiresAt;
+}
+
 async function findActiveTrade(userId) {
   if (!userId) return null;
 
@@ -52,14 +90,15 @@ async function findActiveTrade(userId) {
     .get();
 
   for (const doc of snapshot.docs) {
-    const trade = doc.data();
+    const trade = {
+      id: doc.id,
+      ...doc.data(),
+    };
 
-    if (isUserInTrade(trade, userId)) {
-      return {
-        id: doc.id,
-        ...trade,
-      };
-    }
+    if (!isUserInTrade(trade, userId)) continue;
+    if (isTradeExpired(trade)) continue;
+
+    return trade;
   }
 
   return null;
@@ -166,9 +205,11 @@ function formatConfirmStatus(value) {
 }
 
 function getTradeExpiryText(trade = {}) {
-  if (!trade.expiresAt) return "No expiry";
+  const expiresAt = getTimestampMillis(trade.expiresAt);
 
-  const remainingMs = Number(trade.expiresAt || 0) - Date.now();
+  if (!expiresAt) return "No expiry";
+
+  const remainingMs = expiresAt - Date.now();
   const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
 
   if (remainingSeconds <= 0) return "Expired";
@@ -196,6 +237,7 @@ function getTradeStatusText(trade = {}) {
   if (status === "completed") return "Completed";
   if (status === "cancelled") return "Cancelled";
   if (status === "declined") return "Declined";
+  if (status === "expired") return "Expired";
 
   return status;
 }
@@ -214,10 +256,8 @@ function formatPlayerTradeSection({
     `👤 **${label}:** <@${userId || "unknown"}>\n` +
     `Confirmation: **${formatConfirmStatus(confirmed)}**\n` +
     `Gold Offer: **${Number(gold || 0)} Gold**\n\n` +
-
     `🎒 **Items Offered:**\n` +
     `${formatTradeItems(items)}\n\n` +
-
     `🐾 **Pets Offered:**\n` +
     `${formatTradePets(safePets)}`
   );
@@ -234,7 +274,7 @@ function formatTradeWindow(trade = {}) {
   const player2Gold = Number(trade.player2Gold || 0);
 
   const expiryText =
-    trade.status === "pending"
+    String(trade.status || "").toLowerCase() === "pending"
       ? `\n⏳ Invite Expiry: **${getTradeExpiryText(trade)}**`
       : "";
 
@@ -242,9 +282,7 @@ function formatTradeWindow(trade = {}) {
     `🤝 **SYXTH TRADE WINDOW**\n\n` +
     `Trade ID: \`${trade.id || trade.tradeId || "unknown"}\`\n` +
     `Status: **${getTradeStatusText(trade)}**${expiryText}\n\n` +
-
     `━━━━━━━━━━━━━━━━━━\n\n` +
-
     formatPlayerTradeSection({
       label: "Player 1",
       userId: trade.player1Id,
@@ -253,9 +291,7 @@ function formatTradeWindow(trade = {}) {
       items: player1Items,
       pets: player1Pets,
     }) +
-
     `\n\n━━━━━━━━━━━━━━━━━━\n\n` +
-
     formatPlayerTradeSection({
       label: "Player 2",
       userId: trade.player2Id,
@@ -264,7 +300,6 @@ function formatTradeWindow(trade = {}) {
       items: player2Items,
       pets: player2Pets,
     }) +
-
     `\n\n━━━━━━━━━━━━━━━━━━\n\n` +
     `Commands:\n` +
     `\`!s trade add <item_id> <qty>\`\n` +
@@ -283,11 +318,13 @@ module.exports = {
 
   normalizeId,
   getArray,
+  getTimestampMillis,
 
   getMentionedUser,
   getPlayer,
 
   isUserInTrade,
+  isTradeExpired,
   findActiveTrade,
 
   isStarterItem,

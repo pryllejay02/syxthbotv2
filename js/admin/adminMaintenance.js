@@ -7,6 +7,8 @@ const { getQualityEmoji } = require("../utils/qualitySystem");
 const {
   getActivePet,
   applyPetStats,
+  normalizePets,
+  getPetDisplayEmoji,
 } = require("../utils/petSystem");
 
 const EQUIPMENT_SLOTS = [
@@ -570,18 +572,17 @@ module.exports = async function adminMaintenance(message, args = []) {
     });
 
     const inventory = normalizeInventory(player.inventory || []);
-
-    const equipmentStats = calculateTotalStats(baseStats, equipment);
-
-    const pets = Array.isArray(player.pets) ? player.pets : [];
-    const activePetId = player.activePetId || null;
+    const pets = normalizePets(player.pets || []);
 
     const activePet = getActivePet({
       ...player,
       pets,
-      activePetId,
+      activePetId: player.activePetId || null,
     });
 
+    const activePetId = activePet?.id || player.activePetId || null;
+
+    const equipmentStats = calculateTotalStats(baseStats, equipment);
     const totalStats = applyPetStats(equipmentStats, activePet);
 
     const oldMaxHp = Number(player.maxHp || baseStats.maxHp || 100);
@@ -651,7 +652,9 @@ module.exports = async function adminMaintenance(message, args = []) {
   }
 
   const activePetText = result.activePet
-    ? `${result.activePet.emoji || "🐾"} ${result.activePet.name} Lv.${result.activePet.level || 1}`
+    ? `${getPetDisplayEmoji(result.activePet)} ${result.activePet.name} Lv.${
+        result.activePet.level || 1
+      }`
     : "None";
 
   return message.reply(

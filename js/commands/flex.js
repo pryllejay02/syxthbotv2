@@ -18,6 +18,7 @@ const {
   getPetMaxLevel,
   getPetRequiredExp,
   getPetExpDisplay,
+  getPetDisplayEmoji,
 } = require("../utils/petSystem");
 
 const EQUIPMENT_SLOTS = [
@@ -659,13 +660,14 @@ async function flexPet(message, player, petId) {
   const petStats = calculatePetStats(pet);
   const maxLevel = getPetMaxLevel(pet);
   const { quality, qualityEmoji } = getPetQualityDisplay(pet);
+  const displayEmoji = getPetDisplayEmoji(pet);
 
   const embed = new EmbedBuilder()
     .setColor(getPetColor(pet))
     .setTitle("🐾 SYXTH PET FLEX")
     .setDescription(
       `👤 **${player.username || message.author.username}** is showing a pet:\n\n` +
-        `${pet.emoji || "🐾"} ${qualityEmoji} **${
+        `${displayEmoji} ${qualityEmoji} **${
           pet.name || "Unknown Pet"
         }**\n\n` +
         `━━━━━━━━━━━━━━━━━━`

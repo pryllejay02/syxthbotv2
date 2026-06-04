@@ -16,7 +16,8 @@ const {
   applyPetStats,
   calculatePetStats,
   getPetMaxLevel,
-  getPetRequiredExp,
+  getPetExpDisplay,
+  getPetDisplayEmoji,
 } = require("../utils/petSystem");
 
 const balanceConfig = require("../data/balanceConfig");
@@ -656,15 +657,16 @@ function getActivePetDisplay(player = {}) {
   }
 
   const maxLevel = getPetMaxLevel(activePet);
-  const requiredExp = getPetRequiredExp(activePet.level || 1);
+  const expDisplay = getPetExpDisplay(activePet);
   const petStats = calculatePetStats(activePet);
+  const displayEmoji = getPetDisplayEmoji(activePet);
 
   return (
-    `${activePet.emoji || "🐾"} **${activePet.name || "Unknown Pet"}**\n` +
+    `${displayEmoji} **${activePet.name || "Unknown Pet"}**\n` +
     `**Quality:** ${activePet.qualityEmoji || ""} ${activePet.quality || "Common"}\n` +
     `**Type:** ${String(activePet.type || "balanced").toUpperCase()}\n` +
     `**Level:** ${activePet.level || 1}/${maxLevel}\n` +
-    `**EXP:** ${activePet.exp || 0}/${requiredExp}\n` +
+    `**EXP:** ${expDisplay}\n` +
     `**Bonus:**\n${formatPetStats(petStats)}`
   );
 }
@@ -704,6 +706,17 @@ function shouldPersistRebalancedPlayer(oldPlayer = {}, newPlayer = {}) {
     JSON.stringify(oldPlayer.inventory || []) !==
     JSON.stringify(newPlayer.inventory || [])
   ) {
+    return true;
+  }
+
+  if (
+    JSON.stringify(oldPlayer.pets || []) !==
+    JSON.stringify(newPlayer.pets || [])
+  ) {
+    return true;
+  }
+
+  if ((oldPlayer.activePetId || null) !== (newPlayer.activePetId || null)) {
     return true;
   }
 
@@ -827,6 +840,10 @@ module.exports = async function profileCommand(message) {
 
   const { weapon, weaponQuality } = getWeaponDisplay(rebalancedPlayer);
 
+  const activePetName = activePet
+    ? `${getPetDisplayEmoji(activePet)} ${activePet.name || "Unknown Pet"}`
+    : "None";
+
   const revivedNotice = reviveResult.revived
     ? `✨ **Auto Revive Recovered:** ${reviveResult.revivedHp}/${maxHp} HP\n\n`
     : "";
@@ -866,7 +883,7 @@ module.exports = async function profileCommand(message) {
           `**Inventory Items:** ${(rebalancedPlayer.inventory || []).length}\n` +
           `**Equipped Slots:** ${equippedCount}/6\n` +
           `**Pets Owned:** ${pets.length}\n` +
-          `**Active Pet:** ${activePet ? activePet.name : "None"}\n` +
+          `**Active Pet:** ${activePetName}\n` +
           `**Revive:** ${reviveText}`,
         inline: true,
       },

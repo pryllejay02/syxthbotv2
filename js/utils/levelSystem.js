@@ -7,7 +7,7 @@ const MAX_LEVEL = Number(
 function safeNumber(value, fallback = 0) {
   const number = Number(value);
 
-  if (Number.isNaN(number)) return fallback;
+  if (!Number.isFinite(number)) return fallback;
 
   return number;
 }
@@ -89,8 +89,13 @@ function applyLevelUp(player = {}, gainedExp = 0) {
   let leveledUp = false;
   let levelUps = 0;
 
-  while (level < MAX_LEVEL && exp >= getRequiredExp(level)) {
-    exp -= getRequiredExp(level);
+  while (level < MAX_LEVEL) {
+    const requiredExp = getRequiredExp(level);
+
+    if (!Number.isFinite(requiredExp)) break;
+    if (exp < requiredExp) break;
+
+    exp -= requiredExp;
     level++;
     levelUps++;
     leveledUp = true;

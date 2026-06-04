@@ -70,8 +70,12 @@ function getPartyStaleMs(party = {}) {
     : EMPTY_PARTY_STALE_MS;
 }
 
+function isClientReady(client) {
+  return !!client?.guilds?.cache;
+}
+
 async function findGuildChannel(client, channelId) {
-  if (!client || !channelId) return null;
+  if (!isClientReady(client) || !channelId) return null;
 
   for (const guild of client.guilds.cache.values()) {
     const channel = await guild.channels
@@ -176,6 +180,16 @@ function shouldDeleteParty({
 
 async function cleanupParties(client) {
   try {
+    if (!isClientReady(client)) {
+      console.log("[Party Cleanup] Skipped. Discord client is not ready.");
+      return {
+        checkedParties: 0,
+        deletedParties: 0,
+        deletedChannels: 0,
+        skipped: true,
+      };
+    }
+
     const snapshot = await db
       .collection("parties")
       .where("status", "in", ACTIVE_PARTY_STATUSES)
@@ -197,7 +211,7 @@ async function cleanupParties(client) {
 
       const createdAt = getTimestampMillis(party.createdAt);
       const updatedAt = getTimestampMillis(party.updatedAt) || createdAt;
-      const age = now - updatedAt;
+      const age = updatedAt ? now - updatedAt : Number.MAX_SAFE_INTEGER;
 
       const members = getArray(party.members);
       const invited = getArray(party.invited);
@@ -273,8 +287,23 @@ async function cleanupParties(client) {
         `[Party Cleanup] Checked: ${checkedParties}, Parties deleted: ${deletedParties}, Channels deleted: ${deletedChannels}`
       );
     }
+
+    return {
+      checkedParties,
+      deletedParties,
+      deletedChannels,
+      skipped: false,
+    };
   } catch (error) {
     console.error("[Party Cleanup Error]:", error);
+
+    return {
+      checkedParties: 0,
+      deletedParties: 0,
+      deletedChannels: 0,
+      skipped: true,
+      error,
+    };
   }
 }
 

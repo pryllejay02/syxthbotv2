@@ -1,10 +1,21 @@
 const { db } = require("../../firebase/firebase");
 
+const ACTIVE_TRADE_STATUSES = ["pending", "active", "processing"];
+const ACTIVE_PARTY_STATUSES = ["forming", "ready", "raiding"];
+
 function getMention(message) {
   return message.mentions.users.first();
 }
 
-async function safeDeleteChannel(guild, channelId) {
+function getArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function uniqueIds(ids = []) {
+  return [...new Set(ids.filter(Boolean))];
+}
+
+async function safeDeleteChannel(guild, channelId, reason = "Admin reset cleanup.") {
   if (!guild || !channelId) return false;
 
   const channel = await guild.channels
@@ -13,9 +24,15 @@ async function safeDeleteChannel(guild, channelId) {
 
   if (!channel) return false;
 
-  await channel.delete().catch(() => null);
+  const deleted = await channel
+    .delete(reason)
+    .then(() => true)
+    .catch((error) => {
+      console.error("[Admin Reset] Failed to delete channel:", error);
+      return false;
+    });
 
-  return true;
+  return deleted;
 }
 
 async function commitBatchIfNeeded(batch, count) {
@@ -24,37 +41,64 @@ async function commitBatchIfNeeded(batch, count) {
   }
 }
 
+function isUserInTrade(trade = {}, userId) {
+  if (!userId) return false;
+
+  return (
+    trade.player1Id === userId ||
+    trade.player2Id === userId ||
+    trade.senderId === userId ||
+    trade.receiverId === userId ||
+    trade.fromUserId === userId ||
+    trade.toUserId === userId
+  );
+}
+
+function isUserInParty(party = {}, userId) {
+  if (!userId) return false;
+
+  const members = getArray(party.members);
+  const invited = getArray(party.invited);
+  const pendingInvites = getArray(party.pendingInvites);
+
+  return (
+    party.leaderId === userId ||
+    party.hostId === userId ||
+    members.includes(userId) ||
+    invited.includes(userId) ||
+    pendingInvites.includes(userId)
+  );
+}
+
 async function resetTradeForUser(message, userId) {
   const snapshot = await db
     .collection("trades")
-    .where("status", "in", ["pending", "active", "processing"])
+    .where("status", "in", ACTIVE_TRADE_STATUSES)
     .get();
 
   let tradeCount = 0;
   let channelCount = 0;
 
+  const deletedChannelIds = new Set();
   const batch = db.batch();
 
   for (const doc of snapshot.docs) {
     const trade = doc.data();
 
-    const isInTrade =
-      trade.player1Id === userId ||
-      trade.player2Id === userId ||
-      trade.senderId === userId ||
-      trade.receiverId === userId ||
-      trade.fromUserId === userId ||
-      trade.toUserId === userId;
+    if (!isUserInTrade(trade, userId)) continue;
 
-    if (!isInTrade) continue;
-
-    if (trade.channelId) {
+    if (trade.channelId && !deletedChannelIds.has(trade.channelId)) {
       const deleted = await safeDeleteChannel(
         message.guild,
-        trade.channelId
+        trade.channelId,
+        "Syxth MMORPG trade reset cleanup."
       );
 
-      if (deleted) channelCount++;
+      deletedChannelIds.add(trade.channelId);
+
+      if (deleted) {
+        channelCount++;
+      }
     }
 
     batch.delete(doc.ref);
@@ -72,48 +116,40 @@ async function resetTradeForUser(message, userId) {
 async function resetPartyForUser(message, userId) {
   const snapshot = await db
     .collection("parties")
-    .where("status", "in", ["forming", "ready", "raiding"])
+    .where("status", "in", ACTIVE_PARTY_STATUSES)
     .get();
 
   let partyCount = 0;
   let channelCount = 0;
 
+  const deletedChannelIds = new Set();
   const batch = db.batch();
 
   for (const doc of snapshot.docs) {
     const party = doc.data();
 
-    const members = Array.isArray(party.members) ? party.members : [];
-    const invited = Array.isArray(party.invited) ? party.invited : [];
-    const pendingInvites = Array.isArray(party.pendingInvites)
-      ? party.pendingInvites
-      : [];
+    if (!isUserInParty(party, userId)) continue;
 
-    const isInParty =
-      party.leaderId === userId ||
-      party.hostId === userId ||
-      members.includes(userId) ||
-      invited.includes(userId) ||
-      pendingInvites.includes(userId);
+    const channelIds = uniqueIds([
+      party.voiceChannelId,
+      party.textChannelId,
+      party.channelId,
+    ]);
 
-    if (!isInParty) continue;
+    for (const channelId of channelIds) {
+      if (deletedChannelIds.has(channelId)) continue;
 
-    if (party.voiceChannelId) {
       const deleted = await safeDeleteChannel(
         message.guild,
-        party.voiceChannelId
+        channelId,
+        "Syxth MMORPG party reset cleanup."
       );
 
-      if (deleted) channelCount++;
-    }
+      deletedChannelIds.add(channelId);
 
-    if (party.textChannelId) {
-      const deleted = await safeDeleteChannel(
-        message.guild,
-        party.textChannelId
-      );
-
-      if (deleted) channelCount++;
+      if (deleted) {
+        channelCount++;
+      }
     }
 
     batch.delete(doc.ref);

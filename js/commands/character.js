@@ -14,7 +14,8 @@ const {
   applyPetStats,
   calculatePetStats,
   getPetMaxLevel,
-  getPetRequiredExp,
+  getPetExpDisplay,
+  getPetDisplayEmoji,
 } = require("../utils/petSystem");
 
 const balanceConfig = require("../data/balanceConfig");
@@ -659,15 +660,16 @@ function showActivePet(player = {}) {
 
   const petStats = calculatePetStats(activePet);
   const maxLevel = getPetMaxLevel(activePet);
-  const requiredExp = getPetRequiredExp(activePet.level || 1);
+  const expDisplay = getPetExpDisplay(activePet);
+  const displayEmoji = getPetDisplayEmoji(activePet);
 
   return (
-    `${activePet.emoji || "🐾"} **${activePet.name || "Unknown Pet"}**\n` +
+    `${displayEmoji} **${activePet.name || "Unknown Pet"}**\n` +
     `└ ${activePet.qualityEmoji || ""} ${activePet.quality || "Common"} • ${String(
       activePet.type || "balanced"
     ).toUpperCase()}\n` +
     `└ 📈 Lv.${activePet.level || 1}/${maxLevel}\n` +
-    `└ ⭐ EXP ${activePet.exp || 0}/${requiredExp}\n` +
+    `└ ⭐ EXP ${expDisplay}\n` +
     `└ 📊 ${formatPetStats(petStats)}\n` +
     `└ 🏷️ ID: \`${activePet.id || "no-id"}\``
   );

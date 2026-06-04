@@ -7,6 +7,8 @@ const shopItems = require("../data/shopItems");
 const {
   getActivePet,
   applyPetStats,
+  normalizePets,
+  getPetDisplayEmoji,
 } = require("../utils/petSystem");
 
 const EQUIPMENT_SLOTS = [
@@ -218,12 +220,14 @@ function normalizeFallbackStats(item = {}) {
     attack: Math.floor(Number(item.stats?.attack || 0)),
     defense: Math.floor(Number(item.stats?.defense || 0)),
     maxHp: Math.floor(Number(item.stats?.maxHp || 0)),
+
     dodge: capPercentStat(
       "dodge",
       Number(item.stats?.dodge || 0),
       quality,
       source
     ),
+
     crit: capPercentStat(
       "crit",
       Number(item.stats?.crit || 0),
@@ -334,15 +338,17 @@ function getRebalancedPlayer(player = {}) {
 
   const baseStats = getBaseStatsByClassLevel(classId, level);
   const equipment = normalizeEquipment(player.equipment || {});
-
-  const equipmentStats = calculateTotalStats(baseStats, equipment);
+  const pets = normalizePets(player.pets || []);
 
   const activePet = getActivePet({
     ...player,
-    pets: player.pets || [],
+    pets,
     activePetId: player.activePetId || null,
   });
 
+  const activePetId = activePet?.id || player.activePetId || null;
+
+  const equipmentStats = calculateTotalStats(baseStats, equipment);
   const totalStats = applyPetStats(equipmentStats, activePet);
 
   const hp = Math.min(
@@ -359,8 +365,8 @@ function getRebalancedPlayer(player = {}) {
     baseStats,
     equipment,
 
-    pets: player.pets || [],
-    activePetId: player.activePetId || null,
+    pets,
+    activePetId,
     activePet,
 
     hp,
@@ -373,11 +379,31 @@ function getRebalancedPlayer(player = {}) {
 }
 
 function calculatePower(player) {
-  return balanceConfig.calculatePower(player);
+  if (typeof balanceConfig.calculatePower === "function") {
+    return balanceConfig.calculatePower(player);
+  }
+
+  return Math.floor(
+    Number(player.attack || 0) +
+      Number(player.defense || 0) * 1.5 +
+      Number(player.maxHp || 0) * 0.2 +
+      Number(player.dodge || 0) * 10 +
+      Number(player.crit || 0) * 10 +
+      Number(player.level || 1) * 100
+  );
 }
 
 function calculateOverall(player) {
-  return balanceConfig.calculateOverallScore(player);
+  if (typeof balanceConfig.calculateOverallScore === "function") {
+    return balanceConfig.calculateOverallScore(player);
+  }
+
+  return Math.floor(
+    Number(player.level || 1) * 1000 +
+      Number(player.monsterKills || 0) * 25 +
+      calculatePower(player) +
+      Number(player.gold || 0) * 0.05
+  );
 }
 
 function getMedal(index) {
@@ -393,7 +419,9 @@ function getActivePetText(player = {}) {
 
   if (!activePet) return "None";
 
-  return `${activePet.emoji || "🐾"} ${activePet.name || "Unknown Pet"} Lv.${activePet.level || 1}`;
+  return `${getPetDisplayEmoji(activePet)} ${activePet.name || "Unknown Pet"} Lv.${
+    activePet.level || 1
+  }`;
 }
 
 function getLeaderboardConfig(type) {

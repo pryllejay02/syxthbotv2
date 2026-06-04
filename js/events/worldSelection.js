@@ -445,7 +445,8 @@ module.exports = async function worldSelection(interaction) {
           `💨 Dodge: **${newPlayer.dodge}%**\n` +
           `💥 Crit: **${newPlayer.crit}%**\n` +
           `🪙 Gold: **${newPlayer.gold}**\n\n` +
-          `🐾 Pets: **0**\n` +
+          `🐾 Pets Owned: **0**\n` +
+          `🐾 Active Pet: **None**\n` +
           `🏠 Private Room: <#${playerRoom.id}>\n\n` +
           `Only you and the bot can access this room.`,
         components: [],

@@ -12,6 +12,8 @@ const { getQualityEmoji } = require("../utils/qualitySystem");
 const {
   getActivePet,
   applyPetStats,
+  normalizePets,
+  getPetDisplayEmoji,
 } = require("../utils/petSystem");
 
 function getMention(message) {
@@ -535,14 +537,17 @@ function recalculatePlayerStats(player = {}, targetLevel = null) {
     classId,
   });
 
-  const equipmentStats = calculateTotalStats(baseStats, equipment);
+  const pets = normalizePets(player.pets || []);
 
   const activePet = getActivePet({
     ...player,
-    pets: player.pets || [],
+    pets,
     activePetId: player.activePetId || null,
   });
 
+  const activePetId = activePet?.id || player.activePetId || null;
+
+  const equipmentStats = calculateTotalStats(baseStats, equipment);
   const totalStats = applyPetStats(equipmentStats, activePet);
 
   return {
@@ -550,8 +555,10 @@ function recalculatePlayerStats(player = {}, targetLevel = null) {
     classId,
     baseStats,
     equipment,
-    totalStats,
+    pets,
     activePet,
+    activePetId,
+    totalStats,
   };
 }
 
@@ -576,7 +583,7 @@ function getInventorySummary(inventory = []) {
 }
 
 function getPetSummary(player = {}) {
-  const pets = Array.isArray(player.pets) ? player.pets : [];
+  const pets = normalizePets(player.pets || []);
 
   const activePet = getActivePet({
     ...player,
@@ -596,7 +603,9 @@ function getPetSummary(player = {}) {
 function getActivePetText(activePet = null) {
   if (!activePet) return "None";
 
-  return `${activePet.emoji || "🐾"} ${activePet.name || "Unknown Pet"} Lv.${activePet.level || 1}`;
+  return `${getPetDisplayEmoji(activePet)} ${
+    activePet.name || "Unknown Pet"
+  } Lv.${activePet.level || 1}`;
 }
 
 function getAdminReviveHp(maxHp) {
@@ -699,8 +708,8 @@ module.exports = async function adminPlayer(message, args = []) {
         equipment: recalculated.equipment,
         inventory,
 
-        pets: player.pets || [],
-        activePetId: player.activePetId || null,
+        pets: recalculated.pets,
+        activePetId: recalculated.activePetId,
 
         attack: recalculated.totalStats.attack,
         defense: recalculated.totalStats.defense,
@@ -764,8 +773,8 @@ module.exports = async function adminPlayer(message, args = []) {
         equipment: recalculated.equipment,
         inventory,
 
-        pets: player.pets || [],
-        activePetId: player.activePetId || null,
+        pets: recalculated.pets,
+        activePetId: recalculated.activePetId,
 
         attack: recalculated.totalStats.attack,
         defense: recalculated.totalStats.defense,
@@ -823,8 +832,8 @@ module.exports = async function adminPlayer(message, args = []) {
         equipment: recalculated.equipment,
         inventory,
 
-        pets: player.pets || [],
-        activePetId: player.activePetId || null,
+        pets: recalculated.pets,
+        activePetId: recalculated.activePetId,
 
         attack: recalculated.totalStats.attack,
         defense: recalculated.totalStats.defense,

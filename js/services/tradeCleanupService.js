@@ -10,6 +10,8 @@ const ACTIVE_TRADE_STALE_MS = Number(
   process.env.ACTIVE_TRADE_STALE_MS || 60 * 60 * 1000
 );
 
+const ACTIVE_TRADE_STATUSES = ["active", "processing"];
+
 let cleanupTimer = null;
 
 function getTimestampMillis(value) {
@@ -42,6 +44,10 @@ function getInviteExpireMs() {
   return Number(tradeConfig.inviteExpireMs || 2 * 60 * 1000);
 }
 
+function isClientReady(client) {
+  return !!client?.guilds?.cache;
+}
+
 async function deleteTradeDocument(docRef) {
   await docRef.delete().catch((error) => {
     console.error("[Trade Cleanup] Failed to delete trade document:", error);
@@ -49,7 +55,7 @@ async function deleteTradeDocument(docRef) {
 }
 
 async function findGuildChannel(client, channelId) {
-  if (!client || !channelId) return null;
+  if (!isClientReady(client) || !channelId) return null;
 
   for (const guild of client.guilds.cache.values()) {
     const channel = await guild.channels
@@ -68,7 +74,7 @@ async function findGuildChannel(client, channelId) {
 }
 
 async function deleteTradeChannelFromAnyGuild(client, channelId) {
-  if (!client || !channelId) return false;
+  if (!isClientReady(client) || !channelId) return false;
 
   for (const guild of client.guilds.cache.values()) {
     const deleted = await deleteTradeChannel(guild, channelId).catch(
@@ -115,11 +121,20 @@ async function cleanupExpiredPendingTrades() {
 }
 
 async function cleanupStaleActiveTrades(client) {
+  if (!isClientReady(client)) {
+    return {
+      deletedCount: 0,
+      channelDeletedCount: 0,
+      missingChannelCount: 0,
+      skipped: true,
+    };
+  }
+
   const now = Date.now();
 
   const snapshot = await db
     .collection("trades")
-    .where("status", "in", ["active", "processing"])
+    .where("status", "in", ACTIVE_TRADE_STATUSES)
     .get();
 
   let deletedCount = 0;
@@ -158,7 +173,16 @@ async function cleanupStaleActiveTrades(client) {
           channelDeletedCount++;
         }
       } else {
-        missingChannelCount++;
+        const deletedFromAnyGuild = await deleteTradeChannelFromAnyGuild(
+          client,
+          trade.channelId
+        );
+
+        if (deletedFromAnyGuild) {
+          channelDeletedCount++;
+        } else {
+          missingChannelCount++;
+        }
       }
     }
 
@@ -170,19 +194,21 @@ async function cleanupStaleActiveTrades(client) {
     deletedCount,
     channelDeletedCount,
     missingChannelCount,
+    skipped: false,
   };
 }
 
 async function cleanupOrphanTradeChannels(client) {
-  if (!client) {
+  if (!isClientReady(client)) {
     return {
       deletedCount: 0,
+      skipped: true,
     };
   }
 
   const snapshot = await db
     .collection("trades")
-    .where("status", "in", ["active", "processing"])
+    .where("status", "in", ACTIVE_TRADE_STATUSES)
     .get();
 
   let deletedCount = 0;
@@ -196,16 +222,21 @@ async function cleanupOrphanTradeChannels(client) {
 
     if (found) continue;
 
-    await doc.ref.update({
-      status: "cancelled",
-      updatedAt: new Date(),
-    }).catch(() => null);
+    await doc.ref
+      .update({
+        status: "cancelled",
+        updatedAt: new Date(),
+      })
+      .catch((error) => {
+        console.error("[Trade Cleanup] Failed to cancel orphan trade:", error);
+      });
 
     deletedCount++;
   }
 
   return {
     deletedCount,
+    skipped: false,
   };
 }
 
@@ -230,8 +261,29 @@ async function cleanupTrades(client) {
           `Orphan trades cancelled: ${orphanChannels.deletedCount}`
       );
     }
+
+    return {
+      expiredPending,
+      staleActive,
+      orphanChannels,
+    };
   } catch (error) {
     console.error("[Trade Cleanup Error]:", error);
+
+    return {
+      expiredPending: 0,
+      staleActive: {
+        deletedCount: 0,
+        channelDeletedCount: 0,
+        missingChannelCount: 0,
+        skipped: true,
+      },
+      orphanChannels: {
+        deletedCount: 0,
+        skipped: true,
+      },
+      error,
+    };
   }
 }
 

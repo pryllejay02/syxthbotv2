@@ -12,6 +12,7 @@ const {
   calculatePetStats,
   formatPetStats,
   getPetMaxLevel,
+  getPetDisplayEmoji,
 } = require("../utils/petSystem");
 
 const MAX_ADMIN_ITEM_QUANTITY = Number(
@@ -258,9 +259,10 @@ function getPetAdminRollSource(basePet = {}, quality = "Common") {
 
 function formatGeneratedPet(pet = {}) {
   const petStats = calculatePetStats(pet);
+  const displayEmoji = getPetDisplayEmoji(pet);
 
   return (
-    `${pet.emoji || "🐾"} **${pet.name || "Unknown Pet"}**\n` +
+    `${displayEmoji} **${pet.name || "Unknown Pet"}**\n` +
     `🏷️ ID: \`${pet.id || "no-id"}\`\n` +
     `⭐ Quality: **${pet.qualityEmoji || ""} ${pet.quality || "Common"}**\n` +
     `📈 Level: **${pet.level || 1}/${getPetMaxLevel(pet)}**\n` +

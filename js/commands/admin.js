@@ -11,6 +11,40 @@ const adminReset = require("../admin/adminReset");
 const adminRoom = require("../admin/adminRoom");
 const adminMaintenance = require("../admin/adminMaintenance");
 
+const ITEM_ADMIN_COMMANDS = new Set([
+  "giveitem",
+  "givebossitem",
+  "givepet",
+]);
+
+const PLAYER_ADMIN_COMMANDS = new Set([
+  "givegold",
+  "setlevel",
+  "heal",
+  "revive",
+  "inventory",
+]);
+
+const MAINTENANCE_ADMIN_COMMANDS = new Set([
+  "repairplayer",
+]);
+
+const BOSS_ADMIN_COMMANDS = new Set([
+  "summonboss",
+  "removeboss",
+]);
+
+const ROOM_ADMIN_COMMANDS = new Set([
+  "repairroom",
+]);
+
+const RESET_ADMIN_COMMANDS = new Set([
+  "resettrade",
+  "resetparty",
+  "resetbattle",
+  "resetall",
+]);
+
 module.exports = async function adminCommand(message, args = []) {
   if (!isAdmin(message.member)) {
     return message.reply("❌ Only Divine Gods can use this command.");
@@ -28,42 +62,27 @@ module.exports = async function adminCommand(message, args = []) {
     return adminHelp(message);
   }
 
-  if (["giveitem", "givebossitem", "givepet"].includes(subCommand)) {
+  if (ITEM_ADMIN_COMMANDS.has(subCommand)) {
     return adminItems(message, args);
   }
 
-  if (
-    [
-      "givegold",
-      "setlevel",
-      "heal",
-      "revive",
-      "inventory",
-    ].includes(subCommand)
-  ) {
+  if (PLAYER_ADMIN_COMMANDS.has(subCommand)) {
     return adminPlayer(message, args);
   }
 
-  if (["repairplayer"].includes(subCommand)) {
+  if (MAINTENANCE_ADMIN_COMMANDS.has(subCommand)) {
     return adminMaintenance(message, args);
   }
 
-  if (["summonboss", "removeboss"].includes(subCommand)) {
+  if (BOSS_ADMIN_COMMANDS.has(subCommand)) {
     return adminBoss(message, args);
   }
 
-  if (["repairroom"].includes(subCommand)) {
+  if (ROOM_ADMIN_COMMANDS.has(subCommand)) {
     return adminRoom(message, args);
   }
 
-  if (
-    [
-      "resettrade",
-      "resetparty",
-      "resetbattle",
-      "resetall",
-    ].includes(subCommand)
-  ) {
+  if (RESET_ADMIN_COMMANDS.has(subCommand)) {
     return adminReset(message, args);
   }
 

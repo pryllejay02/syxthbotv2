@@ -33,7 +33,7 @@ function getDefaultStats() {
 function safeNumber(value, fallback = 0) {
   const number = Number(value);
 
-  if (Number.isNaN(number)) return fallback;
+  if (!Number.isFinite(number)) return fallback;
 
   return number;
 }
@@ -49,9 +49,12 @@ function normalizeStats(stats = {}) {
 }
 
 function getStatCaps() {
+  const dodgeCap = safeNumber(balanceConfig.statCaps?.dodge, 50);
+  const critCap = safeNumber(balanceConfig.statCaps?.crit, 65);
+
   return {
-    dodge: Number(balanceConfig.statCaps?.dodge || 50),
-    crit: Number(balanceConfig.statCaps?.crit || 65),
+    dodge: Math.max(0, dodgeCap),
+    crit: Math.max(0, critCap),
   };
 }
 
@@ -114,6 +117,7 @@ module.exports = {
   EQUIPMENT_SLOTS,
   getDefaultEquipment,
   getDefaultStats,
+  safeNumber,
   normalizeStats,
   getStatCaps,
   calculateTotalStats,

@@ -11,9 +11,13 @@ const DROP_RATES = balanceConfig.monsterDrop?.rates || {
 };
 
 function normalizeQuality(quality = "Common") {
-  const normalized = String(quality || "Common");
+  const normalized = String(quality || "Common").toLowerCase();
 
-  return VALID_DROP_QUALITIES.includes(normalized) ? normalized : "Common";
+  const matchedQuality = VALID_DROP_QUALITIES.find(
+    (itemQuality) => itemQuality.toLowerCase() === normalized
+  );
+
+  return matchedQuality || "Common";
 }
 
 function rollDropQuality() {
@@ -33,6 +37,12 @@ function rollDropQuality() {
   return null;
 }
 
+function getItemLevelValue(entry) {
+  const value = Array.isArray(entry) ? entry[0] : entry;
+
+  return Number(value || 1);
+}
+
 function getNearestItemLevel(monsterLevel) {
   if (typeof balanceConfig.getNearestItemLevel === "function") {
     return balanceConfig.getNearestItemLevel(monsterLevel);
@@ -47,15 +57,20 @@ function getNearestItemLevel(monsterLevel) {
 
   if (!itemLevels.length) return level;
 
-  let nearest = Array.isArray(itemLevels[0])
-    ? Number(itemLevels[0][0] || 1)
-    : Number(itemLevels[0] || 1);
+  const sortedLevels = itemLevels
+    .map(getItemLevelValue)
+    .filter((itemLevel) => Number.isFinite(itemLevel))
+    .sort((a, b) => a - b);
 
-  for (const entry of itemLevels) {
-    const itemLevel = Array.isArray(entry) ? entry[0] : entry;
+  if (!sortedLevels.length) {
+    return level;
+  }
 
-    if (Number(itemLevel) <= level) {
-      nearest = Number(itemLevel);
+  let nearest = sortedLevels[0];
+
+  for (const itemLevel of sortedLevels) {
+    if (itemLevel <= level) {
+      nearest = itemLevel;
     }
   }
 
@@ -162,7 +177,7 @@ function getPriceMultiplier(quality = "Common") {
   );
 }
 
-function cleanItemName(name, quality) {
+function cleanItemName(name, quality = "Common") {
   const normalizedQuality = normalizeQuality(quality);
 
   const baseName = String(name || "Unknown Item").replace(
@@ -175,11 +190,23 @@ function cleanItemName(name, quality) {
 
 function getPossibleDropItems(itemLevel) {
   return shopItems.filter((item) => {
+    if (!item) return false;
+
     const type = String(item.type || "").toLowerCase();
 
     if (type === "consumable") return false;
 
     return Number(item.requiredLevel || 1) === Number(itemLevel || 1);
+  });
+}
+
+function getStatsKey(stats = {}) {
+  return JSON.stringify({
+    attack: Number(stats.attack || 0),
+    defense: Number(stats.defense || 0),
+    maxHp: Number(stats.maxHp || 0),
+    dodge: Number(stats.dodge || 0),
+    crit: Number(stats.crit || 0),
   });
 }
 
@@ -243,6 +270,8 @@ function generateMonsterDrop(monsterLevel) {
 function addItemToInventory(inventory = [], droppedItem) {
   if (!droppedItem) return inventory;
 
+  const droppedStatsKey = getStatsKey(droppedItem.stats || {});
+
   const existingItemIndex = inventory.findIndex((item) => {
     if (!item) return false;
 
@@ -250,8 +279,7 @@ function addItemToInventory(inventory = [], droppedItem) {
       item.baseItemId === droppedItem.baseItemId &&
       item.quality === droppedItem.quality &&
       item.source === droppedItem.source &&
-      JSON.stringify(item.stats || {}) ===
-        JSON.stringify(droppedItem.stats || {})
+      getStatsKey(item.stats || {}) === droppedStatsKey
     );
   });
 

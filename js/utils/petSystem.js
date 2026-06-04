@@ -1,4 +1,5 @@
 const petsData = require("../data/pets");
+const petEmojis = require("../data/petEmojis");
 const balanceConfig = require("../data/balanceConfig");
 const { getQualityEmoji } = require("./qualitySystem");
 
@@ -34,6 +35,42 @@ function randomBetween(min, max) {
   if (safeMax <= safeMin) return safeMin;
 
   return Math.random() * (safeMax - safeMin) + safeMin;
+}
+
+const PET_EMOJI_KEYS = Object.keys(petEmojis || {}).sort(
+  (a, b) => b.length - a.length
+);
+
+function getPetEmojiKey(pet = {}) {
+  const candidates = [
+    pet.basePetId,
+    pet.petId,
+    pet.id,
+  ]
+    .filter(Boolean)
+    .map(normalizeId);
+
+  for (const candidate of candidates) {
+    if (petEmojis[candidate]) {
+      return candidate;
+    }
+
+    const matchedKey = PET_EMOJI_KEYS.find(
+      (key) => candidate === key || candidate.startsWith(`${key}_`)
+    );
+
+    if (matchedKey) {
+      return matchedKey;
+    }
+  }
+
+  return "";
+}
+
+function getPetDisplayEmoji(pet = {}) {
+  const emojiKey = getPetEmojiKey(pet);
+
+  return petEmojis[emojiKey] || pet.emoji || "🐾";
 }
 
 function getPetConfigBySource(quality = "Common", source = "monster_pet_drop") {
@@ -153,7 +190,7 @@ function createPet(basePet, quality = "Common", source = "monster_pet_drop") {
 
     basePetId: basePet.id,
     name: basePet.name,
-    emoji: basePet.emoji || "🐾",
+    emoji: getPetDisplayEmoji(basePet),
     type: basePet.type || "balanced",
 
     quality: normalizedQuality,
@@ -251,13 +288,17 @@ function normalizePet(pet = {}) {
   if (!pet) return null;
 
   const quality = normalizeQuality(pet.quality || "Common");
+  const basePetId = pet.basePetId || getPetEmojiKey(pet) || pet.id;
 
   return {
     ...pet,
 
-    basePetId: pet.basePetId || pet.id,
+    basePetId,
     name: pet.name || "Unknown Pet",
-    emoji: pet.emoji || "🐾",
+    emoji: getPetDisplayEmoji({
+      ...pet,
+      basePetId,
+    }),
     type: pet.type || "balanced",
 
     quality,
@@ -906,9 +947,10 @@ function formatPetDisplay(pet = {}, player = {}) {
   const maxLevel = getPetMaxLevel(normalizedPet);
   const petStats = calculatePetStats(normalizedPet);
   const expDisplay = getPetExpDisplay(normalizedPet);
+  const displayEmoji = getPetDisplayEmoji(normalizedPet);
 
   return (
-    `${normalizedPet.emoji || "🐾"} **${normalizedPet.name || "Unknown Pet"}**\n` +
+    `${displayEmoji} **${normalizedPet.name || "Unknown Pet"}**\n` +
     `Quality: **${normalizedPet.qualityEmoji || getQualityEmoji(normalizedPet.quality)} ${normalizedPet.quality}**\n` +
     `Level: **${normalizedPet.level}/${maxLevel}**\n` +
     `EXP: **${expDisplay}**\n` +
@@ -924,9 +966,11 @@ function formatDroppedPet(pet = {}) {
 
   if (!normalizedPet) return "";
 
+  const displayEmoji = getPetDisplayEmoji(normalizedPet);
+
   return (
     `\n🐾 **PET DROP!**\n` +
-    `${normalizedPet.emoji || "🐾"} **${normalizedPet.name}**\n` +
+    `${displayEmoji} **${normalizedPet.name}**\n` +
     `🏷️ ID: \`${normalizedPet.id}\`\n` +
     `⭐ Quality: **${normalizedPet.qualityEmoji} ${normalizedPet.quality}**\n` +
     `📈 Level: **${normalizedPet.level}/${getPetMaxLevel(normalizedPet)}**\n` +
@@ -1062,10 +1106,11 @@ function formatPetListPage({
     ? safePets
         .map((pet, index) => {
           const maxLevel = getPetMaxLevel(pet);
+          const displayEmoji = getPetDisplayEmoji(pet);
 
           return (
             `**${index + 1}.** ${formatPetStatus(pet, activePetId)}\n` +
-            `${pet.emoji || "🐾"} **${pet.name}**\n` +
+            `${displayEmoji} **${pet.name}**\n` +
             `└ ${pet.qualityEmoji || getQualityEmoji(pet.quality)} ${pet.quality} • ${String(pet.type || "balanced").toUpperCase()}\n` +
             `└ 📈 Lv.${pet.level}/${maxLevel} • EXP ${getPetExpDisplay(pet)}\n` +
             `└ 📊 ${formatPetStats(calculatePetStats(pet))}\n` +
@@ -1094,8 +1139,10 @@ function formatTradePet(pet = {}) {
 
   if (!normalizedPet) return "Unknown pet";
 
+  const displayEmoji = getPetDisplayEmoji(normalizedPet);
+
   return (
-    `${normalizedPet.emoji || "🐾"} **${normalizedPet.name || "Unknown Pet"}**\n` +
+    `${displayEmoji} **${normalizedPet.name || "Unknown Pet"}**\n` +
     `└ ${normalizedPet.qualityEmoji || getQualityEmoji(normalizedPet.quality)} ${normalizedPet.quality} • ${String(normalizedPet.type || "balanced").toUpperCase()}\n` +
     `└ 📈 Lv.${normalizedPet.level}/${getPetMaxLevel(normalizedPet)}\n` +
     `└ ${isPetLocked(normalizedPet) ? "🔒 Locked" : "🔓 Unlocked"}\n` +
@@ -1121,6 +1168,9 @@ module.exports = {
   getArray,
   normalizeQuality,
   rollChance,
+
+  getPetEmojiKey,
+  getPetDisplayEmoji,
 
   rollPetStats,
   createPet,

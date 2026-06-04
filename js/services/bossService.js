@@ -142,6 +142,8 @@ function buildBossData(worldId, tier, boss) {
       level,
     }),
 
+    // Rewards are still saved.
+    // They are only shown after the boss is defeated.
     rewards: getBossRewards(boss),
 
     status: "active",
@@ -252,8 +254,7 @@ async function sendBossSpawnAnnouncement(client, worldId, worldConfig, bossData,
         `⚔️ Attack: **${bossData.attack}**\n` +
         `🛡️ Defense: **${bossData.defense}**\n` +
         `💨 Dodge: **${bossData.dodge}%**\n` +
-        `💥 Crit: **${bossData.crit}%**\n\n` +
-        `🎁 Rewards: **${bossData.rewards.exp} EXP** • **${bossData.rewards.gold} Gold**\n` +
+        `💥 Crit: **${bossData.crit}%**\n` +
         `⏳ Expires In: **${getBossExpireMinutes()} minutes**\n\n` +
         `⚠️ RAID BOSS ACTIVE\n\n` +
         `Use \`!s raid hit\`\n` +

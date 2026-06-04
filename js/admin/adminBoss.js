@@ -190,7 +190,6 @@ async function sendBossAnnouncement(client, worldId, worldConfig, rawBoss) {
         `🛡️ Defense: **${boss.defense}**\n` +
         `💨 Dodge: **${boss.dodge}%**\n` +
         `💥 Crit: **${boss.crit}%**\n\n` +
-        `🎁 Rewards: **${boss.rewards.exp} EXP** • **${boss.rewards.gold} Gold**\n\n` +
         `⚠️ RAID BOSS ACTIVE\n\n` +
         `Use \`!s raid hit\`\n` +
         `Use \`!s raid status\``
@@ -314,6 +313,9 @@ async function summonBoss(message, worldId, bossInput) {
     crit: boss.crit,
 
     recommendedLevel: boss.recommendedLevel,
+
+    // Keep rewards saved here.
+    // They are only shown after the boss is defeated.
     rewards: boss.rewards,
 
     status: "active",
@@ -347,7 +349,6 @@ async function summonBoss(message, worldId, bossInput) {
       `🛡️ Defense: **${boss.defense}**\n` +
       `💨 Dodge: **${boss.dodge}%**\n` +
       `💥 Crit: **${boss.crit}%**\n` +
-      `🎁 Rewards: **${boss.rewards.exp} EXP** • **${boss.rewards.gold} Gold**\n` +
       `⏳ Expires In: **${getBossExpireMinutes()} minutes**\n` +
       `🧹 Old Data Cleared: **${cleanupResult.cleared ? "Yes" : "No"}**\n` +
       `📢 Announcement: **${announced ? "Sent" : "Channel not found"}**`

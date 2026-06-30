@@ -843,12 +843,12 @@ module.exports = async function characterCommand(message) {
         `━━━━━━━━━━━━━━━━━━\n\n` +
         `🐾 **Active Pet**\n${showActivePet(rebalancedPlayer)}\n\n` +
         `━━━━━━━━━━━━━━━━━━\n\n` +
-        `🗡️ **Weapon**\n${showEquipment(equipment.weapon, "Weapon")}\n\n` +
-        `⛑️ **Helmet**\n${showEquipment(equipment.helmet, "Helmet")}\n\n` +
-        `🦺 **Armor**\n${showEquipment(equipment.armor, "Armor")}\n\n` +
-        `🧤 **Gloves**\n${showEquipment(equipment.gloves, "Gloves")}\n\n` +
-        `👖 **Pants**\n${showEquipment(equipment.pants, "Pants")}\n\n` +
-        `🥾 **Boots**\n${showEquipment(equipment.boots, "Boots")}\n\n` +
+        `**Weapon**\n${showEquipment(equipment.weapon, "Weapon")}\n\n` +
+        `**Helmet**\n${showEquipment(equipment.helmet, "Helmet")}\n\n` +
+        `**Armor**\n${showEquipment(equipment.armor, "Armor")}\n\n` +
+        `**Gloves**\n${showEquipment(equipment.gloves, "Gloves")}\n\n` +
+        `**Pants**\n${showEquipment(equipment.pants, "Pants")}\n\n` +
+        `**Boots**\n${showEquipment(equipment.boots, "Boots")}\n\n` +
         `━━━━━━━━━━━━━━━━━━\n` +
         `Equip: \`!s equip <item_id>\`\n` +
         `Unequip: \`!s unequip <slot>\`\n` +

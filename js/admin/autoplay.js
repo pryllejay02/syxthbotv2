@@ -8,11 +8,24 @@ const balanceConfig = require("../data/balanceConfig");
 
 const autoPlayers = new Map();
 
+const INVENTORY_FIELDS = ["inventory", "items", "backpack"];
+const HP_POTION_ID = "hp_potion";
+
 function getAutoHuntIntervalMs() {
   const envInterval = Number(process.env.AUTO_HUNT_INTERVAL_MS || 0);
   const fallbackInterval = Number(balanceConfig.commandCooldowns?.hunt || 3000);
 
   return Math.max(2500, envInterval || fallbackInterval);
+}
+
+function getAutoPotionHpPercent() {
+  const envPercent = Number(process.env.AUTO_HUNT_POTION_HP_PERCENT || 0);
+
+  if (Number.isFinite(envPercent) && envPercent > 0) {
+    return Math.min(90, Math.max(5, envPercent));
+  }
+
+  return 35;
 }
 
 function stopAutoHunt(userId) {
@@ -40,6 +53,221 @@ async function getLatestPlayer(playerRef) {
     exists: true,
     player: playerDoc.data(),
   };
+}
+
+function normalizeId(value) {
+  return String(value || "").toLowerCase().trim();
+}
+
+function isHpPotion(item = {}) {
+  const possibleIds = [
+    item.id,
+    item.baseItemId,
+    item.itemId,
+    item.uid,
+    item.name,
+  ].map(normalizeId);
+
+  return possibleIds.includes(HP_POTION_ID);
+}
+
+function getInventoryField(player = {}) {
+  for (const field of INVENTORY_FIELDS) {
+    const value = player[field];
+
+    if (Array.isArray(value)) return field;
+
+    if (value && typeof value === "object") return field;
+  }
+
+  return "inventory";
+}
+
+function getPotionHealAmount(potion = {}, maxHp = 100) {
+  const directHeal = Number(
+    potion.healAmount ||
+      potion.heal ||
+      potion.hpRestore ||
+      potion.restoreHp ||
+      0
+  );
+
+  if (Number.isFinite(directHeal) && directHeal > 0) {
+    return directHeal;
+  }
+
+  const healPercent = Number(
+    potion.healPercent ||
+      potion.hpPercent ||
+      potion.restorePercent ||
+      0
+  );
+
+  if (Number.isFinite(healPercent) && healPercent > 0) {
+    return Math.ceil(maxHp * (healPercent / 100));
+  }
+
+  return maxHp;
+}
+
+function consumePotionFromArrayInventory(inventory = [], maxHp = 100) {
+  const nextInventory = [...inventory];
+
+  const potionIndex = nextInventory.findIndex((item) => {
+    return isHpPotion(item) && Number(item?.quantity || 1) > 0;
+  });
+
+  if (potionIndex === -1) {
+    return {
+      used: false,
+      inventory: nextInventory,
+      healAmount: 0,
+    };
+  }
+
+  const potion = nextInventory[potionIndex] || {};
+  const quantity = Number(potion.quantity || 1);
+  const healAmount = getPotionHealAmount(potion, maxHp);
+
+  if (quantity > 1) {
+    nextInventory[potionIndex] = {
+      ...potion,
+      quantity: quantity - 1,
+    };
+  } else {
+    nextInventory.splice(potionIndex, 1);
+  }
+
+  return {
+    used: true,
+    inventory: nextInventory,
+    healAmount,
+  };
+}
+
+function consumePotionFromObjectInventory(inventory = {}, maxHp = 100) {
+  const nextInventory = {
+    ...inventory,
+  };
+
+  const potionKey = Object.keys(nextInventory).find((key) => {
+    const item = nextInventory[key];
+
+    if (normalizeId(key) === HP_POTION_ID) {
+      return Number(item?.quantity || 1) > 0;
+    }
+
+    return isHpPotion(item) && Number(item?.quantity || 1) > 0;
+  });
+
+  if (!potionKey) {
+    return {
+      used: false,
+      inventory: nextInventory,
+      healAmount: 0,
+    };
+  }
+
+  const potion = nextInventory[potionKey] || {};
+  const quantity = Number(potion.quantity || 1);
+  const healAmount = getPotionHealAmount(potion, maxHp);
+
+  if (quantity > 1) {
+    nextInventory[potionKey] = {
+      ...potion,
+      quantity: quantity - 1,
+    };
+  } else {
+    delete nextInventory[potionKey];
+  }
+
+  return {
+    used: true,
+    inventory: nextInventory,
+    healAmount,
+  };
+}
+
+async function autoUseHpPotionIfNeeded(playerRef) {
+  const thresholdPercent = getAutoPotionHpPercent();
+
+  return db.runTransaction(async (transaction) => {
+    const playerDoc = await transaction.get(playerRef);
+
+    if (!playerDoc.exists) {
+      return {
+        used: false,
+        reason: "player_not_found",
+        player: null,
+      };
+    }
+
+    const player = playerDoc.data() || {};
+
+    const currentHp = Number(player.hp || 0);
+    const maxHp = Math.max(1, Number(player.maxHp || 100));
+    const hpPercent = (currentHp / maxHp) * 100;
+
+    if (currentHp <= 0) {
+      return {
+        used: false,
+        reason: "dead",
+        player,
+      };
+    }
+
+    if (hpPercent > thresholdPercent) {
+      return {
+        used: false,
+        reason: "hp_safe",
+        player,
+      };
+    }
+
+    const inventoryField = getInventoryField(player);
+    const inventory = player[inventoryField];
+
+    const consumeResult = Array.isArray(inventory)
+      ? consumePotionFromArrayInventory(inventory, maxHp)
+      : consumePotionFromObjectInventory(inventory || {}, maxHp);
+
+    if (!consumeResult.used) {
+      return {
+        used: false,
+        reason: "no_potion",
+        player,
+      };
+    }
+
+    const nextHp = Math.min(
+      maxHp,
+      currentHp + Number(consumeResult.healAmount || maxHp)
+    );
+
+    const nextPlayer = {
+      ...player,
+      [inventoryField]: consumeResult.inventory,
+      hp: nextHp,
+      updatedAt: new Date(),
+    };
+
+    transaction.update(playerRef, {
+      [inventoryField]: consumeResult.inventory,
+      hp: nextHp,
+      updatedAt: new Date(),
+    });
+
+    return {
+      used: true,
+      reason: "used",
+      player: nextPlayer,
+      currentHp,
+      nextHp,
+      maxHp,
+      healAmount: consumeResult.healAmount,
+      thresholdPercent,
+    };
+  });
 }
 
 module.exports = async function autoplay(message, args = []) {
@@ -75,7 +303,8 @@ module.exports = async function autoplay(message, args = []) {
     return message.reply(
       `✅ Auto Hunt: ON\n\n` +
         `📍 Channel: <#${timer.channelId}>\n` +
-        `⏱️ Interval: **${timer.intervalMs}ms**`
+        `⏱️ Interval: **${timer.intervalMs}ms**\n` +
+        `🧪 Auto Potion: **${timer.potionThresholdPercent}% HP or lower**`
     );
   }
 
@@ -108,10 +337,12 @@ module.exports = async function autoplay(message, args = []) {
   }
 
   const intervalMs = getAutoHuntIntervalMs();
+  const potionThresholdPercent = getAutoPotionHpPercent();
 
   await message.reply(
     `🤖 Auto Hunt ON\n\n` +
       `⏱️ Interval: **${intervalMs}ms**\n` +
+      `🧪 Auto Potion: Uses \`${HP_POTION_ID}\` at **${potionThresholdPercent}% HP or lower**\n` +
       `🛑 Stop: \`!s creator off\``
   );
 
@@ -173,6 +404,21 @@ module.exports = async function autoplay(message, args = []) {
         return;
       }
 
+      const potionResult = await autoUseHpPotionIfNeeded(playerRef);
+
+      if (potionResult.used) {
+        latestPlayer = potionResult.player;
+
+        await message.channel
+          .send(
+            `🧪 Auto HP Potion used.\n` +
+              `❤️ HP: **${potionResult.currentHp} → ${potionResult.nextHp}/${potionResult.maxHp}**`
+          )
+          .catch(() => null);
+
+        return;
+      }
+
       const battleRef = db.collection("battles").doc(userId);
       const battleDoc = await battleRef.get();
 
@@ -202,6 +448,7 @@ module.exports = async function autoplay(message, args = []) {
     interval,
     intervalMs,
     channelId: message.channel.id,
+    potionThresholdPercent,
     startedAt: new Date(),
   });
 
